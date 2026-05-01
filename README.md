@@ -1,3 +1,7 @@
+# Rete
+
+Rete is available for macOS on TestFlight.
+
 # reTerm
 
 Prebuilt **reTerm** binaries are published under [**Releases**](https://github.com/MasterBOFH/rete/releases).
@@ -8,3 +12,13 @@ Prebuilt **reTerm** binaries are published under [**Releases**](https://github.c
 2. Download the archive for your platform (e.g. `reTerm-vX.Y.Z-macos-arm64.tar.gz` or `…-linux-x86_64.tar.gz`).
 3. Verify the matching `.sha256` file if you rely on integrity checks.
 4. Extract and run the `reTerm` binary as documented in your usual setup.
+
+# Issues and feature requests
+
+Bug reports and feature ideas are welcome in **[GitHub Issues](https://github.com/MasterBOFH/rete/issues)**.
+
+- Use **Issues** for bugs, crashes, and unexpected behaviour (include OS, version, and steps to reproduce when you can).
+
+- Use **Issues** for **feature requests** as well; describe the problem you’re solving and how you’d like it to work.
+
+Please search existing issues first to avoid duplicates.
