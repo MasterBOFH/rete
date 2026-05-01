@@ -10,10 +10,9 @@ Rete supports custom themes defined as JSON files. Themes provide UI colors and 
 ### 2026-04-28
 
 - **Boolean true/false styling**
-  - Added message category keys: `true` and `false` for full-line semantic states (for flows that intentionally mark the whole line as true/false)
-  - Added segment kinds: `true` and `false` for value-only styling inside otherwise normal info lines (used by `/set` list rows)
-  - Theme editor exposes category colors under Message colors -> Categories, and segment colors under Message colors -> Segment colours
-  - Built-in themes map true to a success green and false to an error-like red in both light and dark palettes
+  - Segment kinds `true` and `false` color boolean values inside lines that use ordinary message categories (e.g. `/set` list rows); there are no `true` / `false` message categories
+  - Theme editor exposes these under Message colors -> Segment colours only
+  - Built-in themes map segment `true` to a success green and segment `false` to an error-like red in both light and dark palettes
 
 ### 2026-04-12
 
@@ -187,7 +186,7 @@ Top-level object (`Theme`):
 `MessageColors`:
 - `categories`: `{ String: HexColor }`
   - Keys are `IRCMessageCategory.rawValue` (primary message type classification):
-    - `normal`, `true`, `false`, `serverNotice`, `serverReply`, `info`, `error`, `join`, `part`, `quit`, `topic`, `nick`, `notice`, `mode`, `kick`, `action`, `ctcp`
+    - `normal`, `serverNotice`, `serverReply`, `info`, `error`, `join`, `part`, `quit`, `topic`, `nick`, `notice`, `mode`, `kick`, `action`, `ctcp`
   - **Categories are the primary way to color messages** - each message has exactly one category
 - `tags`: `{ String: HexColor }`
   - Keys are `IRCMessageTag.rawValue` (contextual/metadata tags only):
@@ -198,8 +197,8 @@ Top-level object (`Theme`):
     - `silence` (silence/block related messages)
   - **Tags are only for contextual information** - do NOT duplicate category values (e.g., don't use `"join"` tag if category is already `"join"`)
 - `segmentColors` (optional): `{ String: HexColor }`
-  - Keys are segment kind names for state message parts. Used to color specific parts of join/part/quit/topic/mode/kick/account/CTCP etc. messages.
-  - Supported keys: `literal`, `channel`, `person`, `topic`, `reason`, `hostmask`, `account`, `timestamp`, `mode`, `modeParam`, `command`, `value`
+  - Keys are segment kind names. Used to color specific parts of join/part/quit/topic/mode/kick/account/CTCP etc. messages, and boolean literals via the `true` / `false` segment kinds in settings-style rows.
+  - Supported keys: `literal`, `channel`, `person`, `topic`, `reason`, `hostmask`, `account`, `timestamp`, `mode`, `modeParam`, `command`, `value`, `true`, `false` (boolean literals in settings-style rows)
   - If omitted, semantic fallbacks (e.g. category `info` for hostmask/account/reason, accent for topic) keep parts distinct from the line
 - `segmentBold` (optional): `[ String ]`
   - List of segment kind names that should be rendered bold (e.g. `["person", "timestamp", "command"]`)
