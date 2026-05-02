@@ -361,6 +361,10 @@ proc my_ctcprpl {from target command params serverTime} {
 
 ### Globals
 
+**Client target**:
+
+- `rete-target` – which client app is running: `rete` (Rete GUI app) or `reterm` (reTerm terminal client). The value is fixed for the lifetime of the Tcl interpreter.
+
 **Identity variables**:
 
 - `mynick`   – your current nickname
@@ -389,12 +393,13 @@ Access them from Tcl as normal variables. **Inside procedures**, you must either
 
 # Inside a procedure, use global:
 proc my_handler {args} {
-    global mynick myuser myhost myaccount server serveraddress
+    global rete-target mynick myuser myhost myaccount server serveraddress
     ::rete::debug "I am $mynick!$myuser@$myhost"
 }
 
 # Or use the :: prefix to explicitly reference the global namespace:
 proc my_handler {args} {
+    ::rete::debug "Running on $::rete-target"
     ::rete::debug "I am $::mynick!$::myuser@$::myhost"
     ::rete::debug "Connected to $::server at $::serveraddress"
 }
