@@ -7,6 +7,14 @@ Rete supports custom themes defined as JSON files. Themes provide UI colors and 
 
 ## Changelog
 
+### 2026-05-04
+
+- **Buffer list unread / highlight badges and row labels**
+  - Optional `ui` colours: `bufferListHighlightBadgeBackground`, `bufferListHighlightBadgeForeground`, `bufferListUnreadBadgeBackground`, `bufferListUnreadBadgeForeground` (capsule badges in the macOS/iOS sidebar, split headers, topic bar, and reTerm sidebar counts)
+  - Optional buffer **title** colours (separate highlight vs active): `bufferListHighlightBufferNameColor` (mention / highlight tally), `bufferListActiveBufferNameColor` (unread count and/or channel activity, when not in the highlight state). Replaces the earlier single `bufferListNotifyNameForeground` key — update hand-written JSON accordingly.
+  - Optional `bufferListNotifyNameBold`: when JSON `false`, buffer names stay regular weight even with emphasis; when omitted or `true`, names use bold (default: bold, no name tint)
+  - **Theme editor**: controls under **Buffer list (sidebar)** → “Buffer list: highlight / unread” use human-readable labels; JSON keys are shown as captions.
+
 ### 2026-04-28
 
 - **Boolean true/false styling**
@@ -167,6 +175,13 @@ Top-level object (`Theme`):
 - `secureBadgeColor` (optional): `HexColor` for secure connection badge icon color. Default: system green.
 - `botBadgeColor` (optional): `HexColor` for bot badge icon color. Default: system secondary label color.
 - `blockedBadgeColor` (optional): `HexColor` for blocked badge icon color. Default: system red.
+- `bufferListHighlightBadgeBackground` (optional): Capsule fill for the **highlight** count badge in the buffer list (sidebar, split pane headers, topic bar). Default: red at ~80% opacity (SwiftUI) / theme-driven in reTerm when set.
+- `bufferListHighlightBadgeForeground` (optional): Text colour on that highlight badge. Default: white (or bright foreground on highlight-coloured text in reTerm when no capsule background is set).
+- `bufferListUnreadBadgeBackground` (optional): Capsule fill for the **unread** count badge (shown when there are unreads and no highlight badge). Default: grey at ~60% opacity.
+- `bufferListUnreadBadgeForeground` (optional): Text colour on the unread badge. Default: white.
+- `bufferListHighlightBufferNameColor` (optional): Colour for the buffer **title** in the sidebar (and related rows) when the buffer has a **highlight** (mention / rules / red badge state). When omitted, the title uses normal `foreground` (default: no separate tint, bold still follows `bufferListNotifyNameBold`).
+- `bufferListActiveBufferNameColor` (optional): Colour for the buffer title when the row is **active** only in the sense of **unread** and/or **channel activity** (grey badge / activity strip), and not in the highlight state above. When omitted, uses normal `foreground`.
+- `bufferListNotifyNameBold` (optional): Boolean; when `false`, buffer names do **not** switch to bold when emphasized. When `true` or omitted, emphasized names are bold (default: bold).
 - `joinBadge` (optional): `String` (SF Symbol name for join message badge. Default: `"arrow.right.circle.fill"`)
 - `partBadge` (optional): `String` (SF Symbol name for part message badge. Default: `"arrow.left.circle.fill"`)
 - `quitBadge` (optional): `String` (SF Symbol name for quit message badge. Default: `"arrow.left.circle.fill"`)
@@ -522,6 +537,24 @@ The following optional fields live in the `ui` object of **each** palette (`ligh
 Typing the **exact** default symbol name (e.g. `"number"` for channels) in the theme editor is treated like “use built-in default” and is stored as `null` in JSON, same idea as message badge fields.
 
 Per-buffer **custom** icons set from TCL (`setbuffericon`) still override the theme for that buffer.
+
+## Buffer list activity, highlights, and count badges
+
+When a buffer has **highlights**, a count badge is shown (red capsule by default on macOS / iOS). When it has **unreads** (or suppressed highlights) but no highlight tally, a grey capsule shows the unread count. The same counts appear in **reTerm** in the right-hand columns of sidebar rows (truecolour when theme hex is set).
+
+Optional `ui` fields (per palette):
+
+| JSON key | Purpose | Default when omitted |
+|----------|---------|----------------------|
+| `bufferListHighlightBadgeBackground` | Capsule fill behind the highlight count | macOS/iOS: system red ~80% opacity; reTerm: no filled pill (foreground-only badge) |
+| `bufferListHighlightBadgeForeground` | Text (and icon) colour on the highlight badge | White (reTerm: coral-ish default foreground when no background is set) |
+| `bufferListUnreadBadgeBackground` | Capsule fill behind the unread count | macOS/iOS: grey ~60% opacity; reTerm: no pill unless set |
+| `bufferListUnreadBadgeForeground` | Unread count text colour | White on macOS/iOS when a capsule background is used; reTerm: muted grey default when no background |
+| `bufferListHighlightBufferNameColor` | Buffer **title** colour when the row has a **highlight** (red highlight badge) | Normal `foreground` |
+| `bufferListActiveBufferNameColor` | Buffer **title** colour when the row has **unread** and/or **channel activity** but not a highlight tally | Normal `foreground` |
+| `bufferListNotifyNameBold` | Whether the buffer name becomes **bold** while emphasized | `true` (bold) |
+
+**reTerm** currently reads these keys from the same JSON shape but uses the built-in dark palette as the runtime source until reTerm loads user theme files; editing the keys still keeps themes forward-compatible.
 
 ### Example
 

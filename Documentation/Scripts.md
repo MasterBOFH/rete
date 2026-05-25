@@ -456,6 +456,63 @@ Example:
 ::rete::rfcequal "Chan^el" "chan~el"       ;# ^ == ~ under RFC 1459
 ```
 
+- **Ban hostmask (`maskhost`)**
+
+```tcl
+::rete::maskhost nick!user@host ?masktype?
+```
+
+Returns a masked IRC hostmask string suitable for bans, using the same rules as
+common Eggdrop-style `maskhost`. `masktype` is an integer from `0` to `39`.
+If you omit it, Rete uses the **Ban mask type** preference (**Chat & Behaviour →
+IRC** in the app), which defaults to `3` when unset.
+Invalid `nick!user@host` or an out-of-range type makes the
+command return a Tcl error.
+
+**Types 0–9** (default wildcards on nick/user/host as shown):
+
+| Type | Result pattern |
+|------|----------------|
+| 0 | `*!user@host` |
+| 1 | `*!*user@host` (leading `~` on ident is stripped when a `*` prefix is added) |
+| 2 | `*!*@host` |
+| 3 | `*!*user@*.host` (see below) |
+| 4 | `*!*@*.host` |
+| 5 | `nick!user@host` |
+| 6 | `nick!*user@host` |
+| 7 | `nick!*@host` |
+| 8 | `nick!*user@*.host` |
+| 9 | `nick!*@*.host` |
+
+For types **3, 4, 8,** and **9**, the host is widened when possible: IPv4 addresses
+become `a.b.c.*`; hostnames with at least three dot-separated labels become
+`*.last.two.labels`; **IPv6 literals** are normalized to a **`/64` CIDR prefix**
+(e.g. `2001:db8:1:2:3:4:5:6` → `2001:db8:1:2::/64`), including forms with
+brackets (`[...]`) or a zone id (`%…`), which are stripped before parsing.
+Strings that look like hostnames but are not valid IPv6 are unchanged. Two-label
+domains (e.g. `example.com`) are left unchanged.
+
+**Types 10–19** — same structure as types **0–9**, but on hostnames that are not
+handled by the IPv4 / multi-label / IPv6 widening above, **each digit** in the host
+is replaced with `?`. When the widening rule applies (IPv4, `*.domain`, etc.),
+behaviour matches the corresponding type **0–9**.
+
+**Types 20–29** — same as **10–19**, but each run of digits in the host is replaced
+with a single `*`.
+
+**Types 30–39** — same nick and user wildcards as the corresponding type among
+**0–9** (e.g. type 32 matches type 2), but the host is always `*`.
+
+Example:
+
+```tcl
+::rete::maskhost "MrIron!~id@127.0.0.1"     ;# -> per Ban mask type pref (e.g. *!*id@127.0.0.* when pref is 3)
+::rete::maskhost "MrIron!id@pretty.lame.tld" 3
+# -> *!*id@*.lame.tld
+::rete::maskhost "nick!user@2001:db8:1:2:3:4:5:6" 3
+# -> *!*user@2001:db8:1:2::/64
+```
+
 - **Theme settings**
 
 ```tcl
