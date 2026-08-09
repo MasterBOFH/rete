@@ -73,6 +73,21 @@ proc my_raw_out {line} {
 ```tcl
 proc my_registered {} {
     # No arguments
+    # Fires on 001 RPL_WELCOME (protocol registration). Prefer ENDOFMOTD for
+    # post-connect work such as perform/auto-commands; bouncers may emit 001 early.
+    return 0
+}
+```
+
+**ENDOFMOTD**
+```tcl
+proc my_endomotd {code} {
+    # code: "376" (RPL_ENDOFMOTD) or "422" (ERR_NOMOTD)
+    #
+    # Fires once the server has finished the MOTD phase — either End of MOTD or
+    # No MOTD. Despite the name, both numerics use this event: they are the
+    # classic client cue that the connection banner is done and JOIN / perform
+    # commands are safe to send. Prefer this over REGISTERED (001) or filtering RPL.
     return 0
 }
 ```
@@ -374,9 +389,9 @@ proc my_ctcprpl {from target command params serverTime} {
 
 **Server variables**:
 
-- `server` – the current server's real name
-- `serveraddress` – the current server's internet address and port from config (format: `host:port`)
-- `serverdaemon` – the detected IRC daemon type (e.g., `"ircu"`, `"ratbox"`, `"hybrid"`, `"bahamut"`, `"unrealircd"`, `"inspircd"`, `"solanum"`, `"snircd"`, or `"unknown"`)
+- `server` – IRC server name from **004 RPL_MYINFO** (falls back to the 001 prefix until 004 arrives). Prefer this over `serveraddress` when matching networks (e.g. behind ZNC).
+- `serveraddress` – configured connect host and port (`host:port`), i.e. the bouncer or direct endpoint you connected to
+- `serverdaemon` – the detected IRC daemon type (e.g., `"ircu"`, `"ircd"`, `"ratbox"`, `"hybrid"`, `"bahamut"`, `"unrealircd"`, `"inspircd"`, `"solanum"`, `"snircd"`, or `"unknown"`)
 - `server-online` – unixtime when connected to current server, or `"0"` if disconnected
 
 **Version variables**:
