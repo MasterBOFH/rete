@@ -42,13 +42,18 @@ The server is **off by default**. Four settings control it:
 | `control.enabled` | off | Serves MCP on `127.0.0.1` with the twelve release tools. |
 | `control.debug` | off | Also serves the four debug tools and `subscribe`'s raw and log filters. Takes effect on the next request; no restart. |
 | `control.send` | off | Also serves `send_raw`, which sends raw lines to IRC (see *Sending*). Independent of `control.debug`. Takes effect on the next request; no restart. **Never saved**: off at every launch, and turning it on lasts until Rete quits. |
-| `control.port` | `7421` (macOS app), `7422` (reTerm) | The port to listen on, `1024`…`65535`. |
+| `control.port` | `7421` (macOS app, Rete on Linux), `7422` (reTerm) | The port to listen on, `1024`…`65535`. |
 
 So `tools/list` holds **12** tools, **16** with `control.debug`, **13** with `control.send`, and
 all **17** with both.
 
 The server listens on **`127.0.0.1` only**, never on another interface. It reports itself to
-MCP clients as `rete` with the macOS app's version, or `reterm` with reTerm's version.
+MCP clients as `rete` with the app's version (the macOS app, and Rete on Linux), or `reterm` with
+reTerm's version.
+
+Three frontends run it: the macOS app, reTerm (macOS and Linux), and **Rete on Linux** — the GTK
+app, ReteCross. Each runs its own server with its own token; what differs is how you switch it on
+and see the command, below.
 
 **On macOS**, the same three settings are in **Settings → AI Access**, and `/set control.*` in the
 app changes the same values; each shows what the other wrote.
@@ -94,9 +99,40 @@ debug tools are served and ` · send` while agents may send to IRC (`AI access o
 while it is not serving it gives the same off notice or failure reason as `/control token`.
 `/control log` prints the AI access log into the reTerm buffer (see *The AI access log*).
 
-**What is exposed.** IRC connections only, ReteCloud sessions included, since they run on
-an IRC engine. WeeChat relay connections are not exposed in v1: they are absent from
-`list_sessions` and cannot be read by any tool.
+**In Rete on Linux** (the GTK app), switch it on in **Settings → Preferences → AI Access**, or with
+`/set control.enabled on` typed in the input line (and `control.debug`, `control.send`,
+`control.port`); the pane and `/set` change the same values. The server starts or stops at once, and
+it starts at launch when `control.enabled` was left on. It serves as `rete`, like the macOS app:
+its port is `7421` while `control.port` is unset, and its token is its own (see *Where the token is
+kept*). It stops when Rete quits, beside the QUITs and log flushes, and is waited for at most
+3 seconds.
+
+- **It shares its settings with reTerm.** Both read and write the same `/set` file,
+  `~/.rete/irc-defaults.json`, and each reads it at launch, so `control.enabled`, `control.debug`
+  and `control.port` set in one are the values the other starts with (`control.send` is never
+  saved, in either).
+- **The two collide on the port once `control.port` is set.** Unset, reTerm listens on `7422` and
+  Rete on `7421`. Set — in either — both listen on that one port, so with AI access on in both, the
+  one that starts second cannot bind it, serves nothing, and says so —
+  `Port <port> is in use — AI access is off`, as a notice in reTerm and in the status line in Rete.
+  To run both with AI access on, leave `control.port`
+  unset.
+- **The pane** has the macOS pane's switches (**Allow AI agents to read Rete**, **Include debug
+  tools**, **Let AI agents send to IRC** with its warning), **Port** (applied when you press
+  Return), **Access token**, **Claude Code command** and **Regenerate token**, and says in red why the
+  server is not serving.
+- **The command is shown, never copied.** The clipboard on Linux has no way to mark a value as a
+  password, so a clipboard manager would keep the token. The AI Access pane shows the command that
+  connects Claude Code, and the token, as read-only text you can select; there is no copy button and
+  nothing is put on the clipboard for you. Both show the token as `********` until you press
+  **Show**, and it goes back behind the mask when you leave the pane or the server stops. While the
+  server is not serving, both are empty. reTerm's `/control token` prints reTerm's own token, not this
+  one.
+- Its toolbar row shows the same **AI access on** (· debug · send) indicator, left of the buttons;
+  clicking it opens Settings on the **AI Access** pane. It has no AI access log view yet.
+
+**What is exposed.** Every connection: direct IRC, and ReteCloud sessions, which run on an IRC
+engine too.
 
 Every request carries a bearer token that Rete generates and stores. Rete shows the command to
 connect Claude Code with the token and port filled in; its shape is:
@@ -122,15 +158,17 @@ program may now be listening (see the port-squat risk below). A new token makes 
 useless at once.
 
 **Where the token is kept.** The first time the server starts, it creates a random 43-character
-token. The macOS app and reTerm keep **separate** tokens, so regenerating one frontend's token
-does not change the other's.
+token. The app (macOS or Linux) and reTerm keep **separate** tokens, so regenerating one
+frontend's token does not change the other's.
 
 - On macOS, the token is in the Keychain: service `Rete Control`, account `mcp-token` for the
   app and `mcp-token-reterm` for reTerm.
-- On Linux, reTerm stores it in `~/.rete/secrets.json`, or in the file `$RETE_SECRETS_FILE`
-  names. The token is **base64-encoded there, not encrypted**. The file is mode `0600`, its
+- On Linux, reTerm and Rete store it in `~/.rete/secrets.json`, or in the file `$RETE_SECRETS_FILE`
+  names — under the same service, account `mcp-token` for Rete and `mcp-token-reterm` for reTerm. The token is **base64-encoded there, not encrypted**. The file is mode `0600`, its
   directory is created `0700`, and the file is replaced atomically, so it is never readable by
-  others, not even for a moment.
+  others, not even for a moment. A file found wider than `0600` — and `~/.rete` found wider than
+  `0700` — is tightened before it is read, and the log says so
+  ([`Environment.md`](Environment.md#rete_secrets_file)).
 
 **Regenerating the token** takes effect on the next request: the old token gets `403`. The
 server closes its port and opens it again with the new token, so a request in flight at that
@@ -166,10 +204,10 @@ exchange detects the swap. Keep AI access on only while you use it, and regenera
 Rete ever reported the port in use when you did not expect it.
 
 **Who may connect.** The port is reachable by every local process, so the token is the barrier.
-On **Linux**, reTerm also checks the other end of every connection before reading the request:
+On **Linux**, reTerm and Rete also check the other end of every connection before reading the request:
 it looks the client's socket up in `/proc/net/tcp` (and `/proc/net/tcp6`, for a client on a
 dual-stack socket) and closes the connection, unanswered, unless the socket belongs to the same
-user as reTerm. **It fails closed**: when the table cannot be read or has no row for the client —
+user as the server. **It fails closed**: when the table cannot be read or has no row for the client —
 `/proc` not mounted, or hidden by a hardened `hidepid` setup or a sandbox — every connection is
 refused, so AI access does not work there rather than serving a client it could not identify.
 A socket that is closing (`TIME_WAIT`) or not yet accepted (`SYN_RECV`) is not counted, and if
@@ -305,7 +343,7 @@ string below — not a JSON-RPC error. These are all of them:
 | `too many waiting calls: at most 2 wait_for_updates may run at once` | A third `wait_for_updates` while two are waiting. |
 | `session not connected` | `send_raw` on a session that is not connected. |
 | `invalid arguments: line is empty` | `send_raw` with an empty line, or one of nothing but whitespace. |
-| `invalid arguments: line contains a line break or NUL` | `send_raw` with a line break (CR, LF, VT, FF, U+0085, U+2028 or U+2029) or a NUL anywhere in the line. |
+| `invalid arguments: line contains a line break or NUL` | `send_raw` with a CR, LF or NUL anywhere in the line — the three RFC 2812 forbids. VT, FF, U+0085, U+2028 and U+2029 are not refused, and are sent as written, ends included. |
 | `invalid arguments: line is longer than 510 bytes` | `send_raw` with a message — the line after any message tags — over 510 UTF-8 bytes. |
 | `invalid arguments: message tags are longer than 4094 bytes` | `send_raw` with tag data over 4094 UTF-8 bytes. |
 | `invalid arguments: message tags are not followed by a message` | `send_raw` with a line starting `@` and no space after the tags, empty tags, or no message after them. |
@@ -329,8 +367,8 @@ The `invalid arguments: <detail>` details:
 | `<name> must be an object` | `subscribe` with a `raw` or `log` that is not a JSON object. |
 | `unknown argument "<object>.<name>"` | A property `raw` or `log` does not take; and a property of the wrong type is `<object>.<name> must be …`. |
 | `a subscription needs at least one filter` | `subscribe` with no filter, after empty lists, `false` flags and an empty `match` are dropped. |
-| `<name> has more than 50 entries` | `subscribe` with more than 50 entries in `sessions`, `buffers`, `from`, `raw.sessions` (named `raw.sessions`), `raw.commands` (named `commands`) or `log.categories` (named `categories`). |
-| `<name> entry is longer than <N> bytes` | `subscribe` with an entry longer than its cap, in UTF-8 bytes as sent: 64 in `sessions`, `buffers`, `raw.sessions` (named `raw.sessions`), `from` and `log.categories` (named `categories`); 32 in `raw.commands` (named `commands`). Checked after the entry counts and before any entry is parsed, so an over-long id is this error, not `unknown session`. |
+| `<name> has more than 50 entries` | `subscribe` with more than 50 entries in `sessions`, `buffers`, `from`, `kinds`, `raw.sessions`, `raw.commands` or `log.categories`, each named as written here. |
+| `<name> entry is longer than <N> bytes` | `subscribe` with an entry longer than its cap, in UTF-8 bytes as sent, named as written here: 64 in `sessions`, `buffers`, `raw.sessions`, `from` and `log.categories`; 32 in `raw.commands`. Checked after the entry counts and before any entry is parsed, so an over-long id is this error, not `unknown session`. |
 | `match is longer than 256 bytes` | `subscribe` with a `match` over 256 UTF-8 bytes. |
 | `match_mode must be substring or glob` | `subscribe` with another `match_mode`. |
 | `unknown level: "<level>"` | `subscribe`'s `log.min_level` or `read_log`'s `min_level` not a level (cut to 64 UTF-8 bytes and JSON-escaped). |
@@ -642,8 +680,9 @@ A raw line, for example:
 {"dir":"in","line":":irc.example.net 354 me 7 #rete alice","seq":12,"time":"2026-09-30T12:00:00Z","untrusted":true}
 ```
 
-`dir` is `in` or `out`. Lines are masked at the source and screened again before they leave (see
-*Redaction*); a screened line is dropped and counted in `withheld`. A line longer than 2,048 bytes
+`dir` is `in` or `out`. Lines are masked at the source, an `out` line is masked again by what it
+is before the tap keeps it, and every line is screened again before it leaves (see *Redaction*); a
+screened line is dropped and counted in `withheld`. A line longer than 2,048 bytes
 is stored cut short, ending `…[+N bytes]` with the number of bytes dropped.
 
 A ReteCloud session's raw lines are its JSON transport frames, not IRC lines. **The frames it
@@ -713,12 +752,15 @@ The section names are `connection`, `registration`, `sasl`, `capabilities`, `isu
 `reconnect`, `flood`, `config`, `markread`, `silence`, `whois`, `scripts`, matched exactly.
 The `scripts` section carries counts only (`inputCallbackCount`, `menuItemCount`,
 `buttonCount`): the control surface exposes no script state — no callback, menu label, button
-text or icon. Rete sends its own channel WHOs — on joining a channel, and the periodic WHO poll —
-one at a time, each when the one before it is answered or after 45 seconds; the `whox` section
+text or icon. The `buffers` section gives each buffer's three per-buffer switches — the Log,
+Highlight and Activity toggles of its buffer menu, or `/buffer` — as `loggingDisabled`,
+`highlightingDisabled` and `activityDisabled`. Rete sends its own channel WHOs — on joining a channel, and the periodic WHO poll —
+one at a time, each when the one before it is answered or after 120 seconds; the `whox` section
 shows that queue as `silentWhoInFlight` (the channel whose WHO is on the wire),
 `silentWhoDeadline` (when it times out) and `silentWhoQueued` (the channels waiting, in sending
 order), and its summary names the in-flight channel. A WHO you type, a script sends or an agent
-sends with `send_raw` is never queued. The whole snapshot is taken at one instant, so `taken_at.core` always equals
+sends with `send_raw` is never queued, and its reply is always shown — even for the channel whose
+WHO is in flight, whose own WHO it does not complete. The whole snapshot is taken at one instant, so `taken_at.core` always equals
 `taken_at.store`. `omitted` names sections left out to fit the budget, with `truncated: true` (a section larger
 than the whole budget is reachable only through its index `count`); `unavailable` names sections
 the engine did not fill. Secrets the engine holds are never part of any section.
@@ -749,7 +791,7 @@ while it runs, and every tool call that reads the subscriptions sweeps too.
 | Limit | Value |
 |---|---|
 | Subscriptions, across all clients | 16 |
-| Entries in one list filter (`sessions`, `buffers`, `from`, `raw.sessions`, `raw.commands`, `log.categories`) | 50, counted as sent |
+| Entries in one list filter (`sessions`, `buffers`, `from`, `kinds`, `raw.sessions`, `raw.commands`, `log.categories`) | 50, counted as sent |
 | One `sessions`, `buffers` or `raw.sessions` entry (an id) | 64 UTF-8 bytes |
 | One `from` entry (a nick) | 64 UTF-8 bytes |
 | One `raw.commands` entry | 32 UTF-8 bytes |
@@ -759,7 +801,8 @@ while it runs, and every tool call that reads the subscriptions sweeps too.
 | Idle expiry | 900 seconds |
 | `wait_for_updates` `timeout` | 1…20 seconds, default 20 |
 | `wait_for_updates` running at once, across all clients | 2 |
-| Raw and log events stored, per subscription | 200 in any rolling minute |
+| Raw events stored, per subscription | 200 in any rolling minute |
+| Log events stored, per subscription | 200 in any rolling minute, counted apart from raw events |
 
 An event an inbox drops at its cap is counted in `dropped` and is gone; read it with
 `read_since` while the buffer still holds it.
@@ -794,10 +837,12 @@ subscription with no filter at all is refused:
 `invalid arguments: a subscription needs at least one filter`. `match_mode` alone is not a filter.
 
 **Only live traffic becomes an event.** Rows the engine adds as history — rows inserted into the
-middle of a buffer (gap fill), history prepended to it, and lines it marks as replayed or that
-arrive inside a batch (chat history, bouncer playback) — are counted per buffer in `backfilled`
-and never delivered. A bouncer that replays with `server-time` but **without** a
-batch is indistinguishable from live traffic, and its lines are delivered as live.
+middle of a buffer (gap fill), history prepended to it, and replayed lines — chat history, and
+anything inside an IRCv3 `chathistory` or `znc.in/playback` batch, however deeply nested — are
+counted per buffer in `backfilled` and never delivered. A line inside any other kind of batch is
+live and is delivered. A bouncer that replays its backlog without one of those two batch types
+(with no batch, or in a batch type of its own) is indistinguishable from live traffic, and its
+lines are delivered as live.
 
 **A subscription starts from what each buffer already holds.** Existing history is never
 delivered or counted. A message that lands in an existing buffer within moments of the
@@ -1064,8 +1109,12 @@ from its start.
 tripwire); log lines the engine's scan. A line withheld is counted in the subscription's
 `withheld`, never delivered.
 
-**At most 200 raw or log events are stored per subscription in any rolling minute**; each one
-past that is counted in `suppressed` and not stored.
+**At most 200 raw events and, separately, at most 200 log events are stored per subscription in
+any rolling minute**; each one past its kind's 200 is counted in `suppressed` and not stored. The
+two budgets are apart so that a burst of one kind cannot crowd out the other: the log ring is
+the whole application's, and a subscription asking for both at `min_level` `debug` still gets
+the raw lines it asked for while the rest of the application logs heavily. `suppressed` is one
+count for both kinds.
 
 In a digest, `raw` and `log` count the subscription's pending raw and log events; `withheld`
 counts raw or log lines withheld as secrets, `evicted` says a line the subscription would have
@@ -1087,7 +1136,7 @@ looked at — including a call from a client that listed the tools while it was 
 takes effect on the next request; no restart.
 A call already in flight when you switch sending off may still complete.
 
-**Not saved.** `control.send` is off every time the macOS app or reTerm starts. `/set control.send
+**Not saved.** `control.send` is off every time the macOS app, Rete on Linux or reTerm starts. `/set control.send
 on`, or the switch in Settings → AI Access, turns it on until Rete quits; nothing writes it to disk,
 and a `control.send` an earlier build saved is ignored.
 
@@ -1107,9 +1156,15 @@ and a `control.send` an earlier build saved is ignored.
 
 **The line rule.** A line is **refused, never cut**, and nothing is sent when it is:
 
-- a line break — CR, LF, VT, FF, U+0085, U+2028 or U+2029 (Foundation's `newlines`) — or a NUL
-  anywhere in it, ends included: `invalid arguments: line contains a line break or NUL`;
-- empty, or nothing but whitespace: `invalid arguments: line is empty`;
+- a CR, LF or NUL anywhere in it, ends included — the three characters RFC 2812 forbids in a
+  line: `invalid arguments: line contains a line break or NUL`. **Nothing else is refused as a
+  line break**: VT, FF, U+0085, U+2028 and U+2029 are allowed by the RFC and are sent, exactly as
+  `/quote` and `putserv` send them. They reach the server byte for byte **wherever they are, ends
+  included**, and the result, the audit row and the limits below all read the line as sent: only
+  CR, LF and NUL are touched. A line that starts with one of them
+  is not a tagged line, even if an `@` follows: a tag section starts at the line's first byte;
+- empty, or nothing but whitespace (VT, FF, U+0085, U+2028 and U+2029 included):
+  `invalid arguments: line is empty`;
 - a message over **510** UTF-8 bytes: `invalid arguments: line is longer than 510 bytes`. **IRCv3
   message tags are not counted**: a line starting with `@` has a tag section up to its first
   space, and the 510 applies to the message after it;
@@ -1129,8 +1184,7 @@ verbs `/quote` sends without waiting (`PING`, `PONG`, `QUIT`, `PASS`, `USER`, `C
 `AUTHENTICATE`) wait their turn like any other command when an agent sends them. A line that
 starts with message tags is paced by its real command, after the tags, so a tagged `PRIVMSG` is
 paced as chat. **A ReteCloud session has no client-side flood throttler**: there only the burst
-limit and the rate cap below hold an agent back. IRC and ReteCloud sessions both send; WeeChat
-relay sessions are not listed and cannot be sent on.
+limit and the rate cap below hold an agent back. IRC and ReteCloud sessions both send.
 
 **"Sent" means the line was written.** The tool answers `{"sent":true,…}` only once the line has
 gone to the connection; a line a script vetoed, or one the connection could not take, is answered
@@ -1213,6 +1267,7 @@ opens it on its own.
   never opened at launch and never restored when Rete starts again.
 - **reTerm:** `/control log` prints the rows, oldest first, into the reTerm buffer — memory only,
   never written to a transcript, exactly like `/control token`'s answer.
+- **Rete on Linux:** kept, but there is no way to show it yet.
 
 **What is logged — one row per event:**
 
@@ -1228,7 +1283,7 @@ opens it on its own.
   ********` or `AUTHENTICATE ********`, and a service login with its credential masked, by the
   same rule. **Only a top-level argument named
   `line` is masked** — `send_raw`'s, or the same name sent to any other tool — and a secret after a
-  line break in it is masked too. Any other argument, and a `line` nested inside an array or
+  CR, LF or NUL in it is masked too. Any other argument, and a `line` nested inside an array or
   object, is shown as sent. The server-buffer audit row and the log line of *Sending* are
   unchanged; this log is in addition to them.
 - **Requests the access gate refused** — a bad or missing token, a `Host` or `Origin` that is not
@@ -1275,6 +1330,16 @@ the raw tap see `PASS :********`. SASL `AUTHENTICATE` payloads are masked the sa
 and `AUTHENTICATE *` are not secret and stay as sent. `/oper <name> <password>` is shown as
 `OPER <name> ********`: the name stays, the password is masked.
 
+**In the raw tap, by content.** Before the raw tap keeps an `out` line — and so before
+`raw_since`, `search_raw` or a `raw` subscription can return it — the line is masked by what it is,
+whoever sent it: a line sent with `/quote`, typed into the raw buffer or sent with `putserv` is
+masked as Rete's own would be. `PASS`, a SASL `AUTHENTICATE` payload, the password of `OPER` (an
+`OPER` with one parameter is masked whole) and a service login in the table below are masked by
+the rule ReteCloud frames use (below), and a `JOIN`'s keys are masked whole: `JOIN #a,#b ********`.
+The command is read after any `@tags` and `:prefix` word, which are kept. The wire, and
+`bind RAW_OUT`, get the line as written; the raw buffer shows what it showed before (see *What
+redaction does not do*).
+
 **ReteCloud frames.** A ReteCloud session's JSON transport frames are masked before the raw
 buffer or the raw tap sees them: the value of every key whose name contains `password`, `secret`,
 `token`, `private`, `credential`, `cookie`, `pass` or `auth`, or ends with `_key` (any case, at
@@ -1315,10 +1380,16 @@ under-masks). Only the credential words are masked; the target and the verb are 
 Target and verb are matched ignoring case. `SET` is masked only with `PASSWORD`, and a `GROUP` or
 `DROP` with no second argument is left alone. The server still receives the message in full.
 
+A login that comes back **inbound** — the `echo-message` copy, or replayed history — is masked when
+it is **ours**: its sender is the current nick, a nick this session has held since it registered
+(the nick it registered with, and each of its own nick changes after that), or it carries an
+IRCv3 `account` tag naming an account this session has logged in as. A nick only tried during
+registration and refused is not counted, and a login from anyone else is left as it is.
+
 **`/smsg <target> <text>`** and **`::rete::msg -sensitive <target> <text>`** send `text`
 unmodified and mask the **whole** text everywhere Rete shows or stores it — except `bind RAW_OUT`,
 which, like every sensitive line, gives a script the real line (see [`Scripts.md`](Scripts.md)). On
-a connection that cannot mask (ReteCloud, WCRelay) `/smsg` refuses and sends nothing.
+a connection that cannot mask (ReteCloud) `/smsg` refuses and sends nothing.
 
 **On the way out.** Messages, members, raw lines and `engine_state` sections are scanned for
 the exact secret values the session holds — the server password, the SASL password (including a
@@ -1336,7 +1407,12 @@ was last cleared, and of every session that ended since then whose secrets Rete 
 log line is kept, any part of it that is JSON has the value of every secret-named key masked as
 `********`, by the same rule as ReteCloud frames (above). A line that names a secret field the
 masking cannot pair with a value is replaced by a one-line note. ReteCloud responses and frames
-Rete cannot read are logged by status, size and field names, never by content.
+Rete cannot read are logged by status, size and field names, never by content. **Server text from
+ReteCloud is never logged**: a rejected sign-in or token refresh is logged as its status and the
+body's size (`Authentication failed - status: 401, 57-byte body not logged`), and a ReteCloud
+request error that carries the server's message is logged by the message's size (`Request failed
+(57-byte message not logged)`). Where Rete shows that text to you — Settings, an error line in a
+pane — it is shown in full; that is not a log line.
 
 **Session information and buffer names are not scanned**: the `list_sessions` entries (name,
 network, nick), the `list_buffers` names, and the channel names in `find_user`.
@@ -1351,7 +1427,8 @@ not a `PASS` command.
 
 - **A password typed into an ordinary channel or query, or sent to a service not in the table,
   is not recognised.** Rete cannot tell it from conversation. Use `/smsg`.
-- **Transcript logs written before this feature are not rewritten.**
+- **Transcript logs already on disk are not rewritten**: a line logged in clear by a Rete that
+  did not mask it stays in clear.
 - **Servers and bouncers keep the plaintext.** Masking is local; whatever you sent, they have.
 - **The TLS identity passphrase is not scanned for**: it lives only in the keychain and no
   connection holds it.
@@ -1360,8 +1437,8 @@ not a `PASS` command.
 - **The `echo-message` copy of a `/smsg` is recognised only within 10 seconds of sending, and
   only once**: a server echo that arrives later, or a second copy of it, shows in clear.
 - **An `OPER` line with an unmasked password is withheld from the raw view.** `/oper` is masked
-  at the source, so this applies to an `OPER` sent with `/quote`, typed into the raw buffer, or
-  sent with `putserv` on a direct connection (see below).
+  at the source and every outbound line is masked by content before the raw tap keeps it, so this
+  is a second guard: it applies only to an `OPER` shape the masking does not recognise.
 - **Server `AUTHENTICATE` challenges are withheld from the raw view**, by design: the tripwire
   cannot tell a challenge from a payload.
 - **A channel key that is also an ordinary word withholds fail-closed**: every row, member or
@@ -1378,24 +1455,31 @@ not a `PASS` command.
   bytes of a secret are known, a line cut inside that secret is withheld exactly when what was
   kept matches the secret's start, so a holder who can place the cut can confirm the secret's
   next bytes one prefix at a time.
-- **A log line that is not JSON can still show a secret no running session holds**, such as the
-  server's text for a failed ReteCloud sign-in. Rete does not log a ReteCloud response or frame's
-  content, and masks secret-named JSON fields in every log line, but it cannot recognise a secret
-  in free text it did not write.
+- **A log line that is not JSON can still show a secret no running session holds**, if it is
+  free text Rete did not write — a system error's description, for example. Rete does not log a
+  ReteCloud response, frame or server message (see *Rete's own log lines*), and masks secret-named
+  JSON fields in every log line, but it cannot recognise a secret in text it did not write.
 - **A session that ended before Rete ever read its secrets leaves none behind**, so its earlier
   log lines are scanned only against the other sessions' secrets.
 - **Session and buffer names are not scanned** (see *On the way out*). A session display name or
   a channel name that contains a secret is returned as it is.
-- **ReteCloud and WCRelay connections have their own IRC send paths** (WCRelay is outside source
-  masking and the service-login table). ReteCloud's JSON frames are masked at the source (above),
-  but a channel key inside a frame is caught only by the secret-value scan.
-- **A channel key an agent sends with `send_raw`** (`JOIN #channel key`) is recorded as written.
-  `PASS`, `OPER`, `AUTHENTICATE` and service logins in the spellings above are masked; nothing
-  else is recognised as a secret (see *Sending*).
-- **On a direct connection, lines typed into the raw buffer or with `/quote`** (`PASS`, `OPER`,
-  `JOIN #channel :key`) are not recognised as sensitive at the source. A channel key in a `JOIN`
-  is not masked on any connection; only the secret-value scan, which knows the configured keys,
-  catches it.
+- **ReteCloud connections have their own IRC send path.** ReteCloud's JSON frames are masked at
+  the source (above), but a channel key inside a frame is caught only by the secret-value scan.
+- **A channel key an agent sends with `send_raw`** (`JOIN #channel key`) is recorded as written
+  in its audit row, its log line, its result and the AI access log. `PASS`, `OPER`,
+  `AUTHENTICATE` and service logins in the spellings above are masked there; nothing else is
+  recognised as a secret (see *Sending*). The raw tap masks the key (see *In the raw tap*).
+- **On a direct connection, lines typed into the raw buffer or with `/quote`, and lines sent with
+  `putserv`** (`PASS`, `OPER`, a service login, `JOIN #channel :key`) are not recognised as
+  sensitive at the source: **the raw buffer shows them as written**. The raw tap, and so every
+  control-surface read of raw lines, masks them by content (see *In the raw tap*). A channel key
+  in a `JOIN` is masked only there: the raw buffer and a ReteCloud frame show it, and only the
+  secret-value scan, which knows the configured keys, catches it elsewhere.
+- **A login of ours replayed from a nick this session never held, with no `account` tag naming
+  our account, is shown in clear** — a bouncer replaying a login sent under another nick in an
+  earlier run, on a server without `account-tag`. Rete cannot tell it from someone else's
+  (see *Service logins*); the secret-value scan catches it only when it is a configured
+  password.
 - **Clear-gap semantics:** the raw tap starts empty when debug capture is switched on and is
   cleared when it is switched off, so it never shows traffic from before capture began, and a
   reader behind a clear sees a sequence gap with no `evicted` and no `withheld` for it.

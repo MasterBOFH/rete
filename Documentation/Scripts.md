@@ -98,9 +98,10 @@ proc ::hello::greeting {nick} {
 }
 ```
 
-Drop that directory into the scripts directory and it loads at the next connect. Without
-reconnecting: `/script rehash` in `reTerm`, or **Refresh** then **Load** in the macOS Script
-Manager.
+Drop that directory into the scripts directory and it loads when a network first connects.
+A network that is already connected does not pick it up by reconnecting — its interpreter
+outlives the reconnect (see **How the entrypoint runs**): use `/script rehash` in `reTerm`, or
+**Refresh** then **Load** in the macOS Script Manager.
 
 **`manifest.json` fields**
 
@@ -146,11 +147,14 @@ An `id` is refused when it:
   comes from, including a manifest whose JSON writes one as `\u000a` and a catalogue URL that
   percent-encodes one as `%00`: both arrive decoded, as a real control character;
 - **begins with `.`** — a folder whose name starts with a dot is never enumerated, so the bundle
-  would install and then never appear (the sixth row of *When a bundle does not appear* below).
+  would install and then never appear (the sixth row of *When a bundle does not appear* below);
+- is **longer than 255 bytes** — the most a folder name may be. The limit is counted in bytes of
+  UTF-8, as your filesystem counts it, so a character outside ASCII takes two to four of them and
+  an id in a non-Latin script reaches it sooner; the refusal names the limit and the id's length in
+  bytes. The id is refused, never shortened — a shortened id would be a different namespace.
 
-**There is no length limit on an `id`.** A very long one is refused by your filesystem, with the
-filesystem's own message, rather than by Rete — so an id made of non-Latin characters is not held
-to a smaller budget than one made of ASCII, which a byte limit would do.
+Discovery applies the same limit, so a bundle copied in by hand whose manifest declares a longer
+`id` is skipped with that reason.
 
 The refusal names the id and says which of the rules above it broke. Nothing is installed and
 nothing already installed is touched.
@@ -162,90 +166,115 @@ that is not part of the bundle. A *single file name* typed into the macOS bundle
 to the id's rule instead, minus the dot-prefix clause: it is one path component, so `/` and
 control characters are refused there too.
 
-> **Changed in v0.8.** The control-character clause is new, and so is this paragraph: the rest of
-> the rule has been enforced since the same release but the length limit was never part of it, and
-> nothing published said either thing.
-
 The `id` rule is applied wherever a bundle folder is chosen: importing a folder or `.zip`,
 downloading from the catalogue, updating from the catalogue, `/script fetch`, **New Script**, and
 renaming a bundle's namespace — so a namespace you type is held to the same rule as one a manifest
 declares. The `entrypoint` and `files[]` rules are applied when a bundle is installed **and again when it
-is discovered**, so a bundle copied into your scripts directory by hand — or one that predates the
-install rule — is held to them too. Such a bundle is not listed and not loaded: the directory is
-named with the reason, and **nothing the manifest points at outside the bundle is read, parsed or
-run**. **The `id` rule is applied at discovery too, as of v0.8**, so a bundle placed in your scripts
-directory by hand — or one that predates the install rule — is held to it as well. Such a bundle is
-not listed and not loaded, and the directory is named with the reason. **Your `id` is never changed
+is discovered**, so a bundle copied into your scripts directory by hand is held to them too. Such
+a bundle is not listed and not loaded: the directory is named with the reason, and **nothing the
+manifest points at outside the bundle is read, parsed or run**. **The `id` rule is applied at
+discovery too**, so a bundle placed in your scripts directory by hand is held to it as well. Such a
+bundle is not listed and not loaded, and the directory is named with the reason. **Your `id` is never changed
 for you**: it is your script's Tcl namespace and the key its `::rete::store` data is saved under, so
 a silently corrected one would be a bundle you could not find.
 
-> **Changed in v0.8 (breaking).** A manifest with such an `id`, `entrypoint` or `files[]` entry
-> used to install, and now does not. **No bundle that installed *and then appeared* is affected**:
-> every refused form either put the bundle outside your scripts directory or made it invisible
-> once installed.
->
-> **Also changed in v0.8 (breaking).** Discovery now applies the `entrypoint`, `files[]` **and `id`**
-> rules as well as install. **A hand-placed bundle whose manifest names a file outside itself used to
-> load that file**; it now appears as a skipped bundle with the reason, and so does one whose `id` is
-> not usable as a folder name.
+**Uploading a bundle to the catalogue** (the macOS Script Manager's **Upload**) applies the
+`entrypoint` and `files[]` rules once more, with the same reasons, because upload **sends** every
+file the manifest lists. It also refuses a listed file that is a **link to a file outside the
+bundle** — a rule install and discovery do not have. A link to another file inside the bundle is
+fine, and so is a bundle that is itself a link (*Linked bundles*, below). Nothing is sent when an
+upload is refused.
 
 **How the entrypoint runs**
 
 - Rete evaluates **the entrypoint and nothing else**. Split your script across as many files
   as you like and `source` them from the entrypoint.
-- **Every connection gets its own interpreter, and your entrypoint runs once in each.** Two
-  connections running the same bundle share no Tcl variables, procs or state.
-- **A new connection tears the old interpreter down and builds a fresh one**, so nothing
-  survives it except what you put in `::rete::store`. On direct IRC that includes every
-  reconnect: the socket *is* the session there, so a dropped link ends one connection and the
-  reconnect starts another.
-- **A ReteCloud API-link reconnect is not a new connection** (changed 2026-08-19). Your session
-  lives on the bouncer and outlives the client's link to it, so when that link drops and comes
-  back your interpreter is still there — variables, procs, `bind` handlers and armed timers
-  included — and **your entrypoint does not run again**. Auto-load bundles are not
-  re-discovered either: a bundle you drop into the scripts directory while the link is down is
-  picked up by `/script rehash` (or **Refresh** in the macOS Script Manager), not by the
-  reconnect. Before this change the API link's own retry, which fires every five seconds while
-  the link is unreachable, rebuilt the interpreter on every attempt.
+- **Every network gets its own interpreter, and your entrypoint runs once in each.** Two
+  networks running the same bundle share no Tcl variables, procs or state.
+- **The interpreter lives as long as the network, not the connection.** It is built when the
+  network first connects, and a reconnect — after a ping timeout, a dropped socket, a `/quit`
+  and connect again, or a ReteCloud API link that drops and comes back — **keeps it**: your
+  variables, procs, `bind` handlers and armed timers are all still there, and **your entrypoint
+  does not run again**. Direct IRC and ReteCloud behave the same. Deleting the network, or
+  closing its server, ends it: once the network has disconnected (your handlers still see the
+  `QUIT` it sends), the interpreter and everything in it is gone.
+- **What a reconnect does change is the connection your script sees.** When a direct-IRC
+  connection ends `server-online` goes to `"0"`, and it is set again when the new connection
+  registers (`bind REGISTERED` fires for each one). A script that keeps per-connection state —
+  "have I joined my channels yet", "is the server up" — should reset it from those events
+  rather than rely on its interpreter being new. On ReteCloud `server-online` follows the
+  session's own events — see *Disconnecting on a ReteCloud connection*.
+- **Timers keep running while you are disconnected**, on their own schedule. A timer that
+  sends while there is no connection sends nothing; check `server-online` first if that
+  matters.
+- **Auto-load bundles are discovered when the interpreter is built**, which is the network's
+  first connect. A bundle you drop into the scripts directory later is picked up by
+  `/script rehash` (or **Refresh** in the macOS Script Manager), not by a reconnect. A rehash
+  is the one thing that still builds a fresh interpreter — every bundle's state is lost and
+  every auto-load entrypoint runs again.
+- **Nothing runs for a network that has never connected.** Selecting a network you have not
+  connected yet — to read its server buffer — gives it no interpreter, and a rehash leaves such a
+  network alone; its auto-load bundles first run when you connect it. So an entrypoint that
+  connects, joins or sends at load time only ever does so for a network you asked to connect.
 - **While the entrypoint is running, the working directory is the bundle directory**, which
   is what makes `source greeting.tcl` resolve. Relative paths are relative to the bundle
   root, not to the entrypoint's own directory — an entrypoint at `src/main.tcl` sources its
   neighbour as `source src/lib/util.tcl`.
 
-  > **Changed in v0.8 (breaking for `exec`).** That working directory is **your
-  > interpreter's**, not the process's.
-  > `pwd`, `cd`, `source`, `open`, `glob` and `file` all report and resolve
-  > against it, and every connection has its own — so two connections loading bundles at the
-  > same moment no longer share one directory between them. They used to: Rete changed the
-  > *process* working directory around each entrypoint, and a bundle load runs on the
-  > connection's own thread, so a second connection loading at the same instant moved the
-  > directory out from under the first. `source other.tcl` could read the *other* bundle's
-  > copy of the file.
-  >
-  > **Nothing in the list above changes for a script.** What does change is anything that
-  > reaches the filesystem *without* going through those commands — `exec` and its
-  > redirections, `load`, and any compiled extension — which sees the process working
-  > directory instead, and that is now some unrelated directory rather than your bundle.
-  > Give those an absolute path built from `$::rete::bundle_dir` (below). `cd` is also no
-  > longer visible outside your interpreter, which is what it was for.
+  That working directory is **your interpreter's**, not the process's. `pwd`, `cd`, `source`,
+  `open`, `glob` and `file` all report and resolve against it (for `file`, the subcommands that
+  take a path to something on disk — `exists`, `isfile`, `normalize`, `mkdir`, `delete` and the
+  like; the string-only ones, such as `join`, `split` and `dirname`, never look at a directory),
+  and every connection has its own, so two connections loading bundles at the same moment do not
+  share one directory. A `cd` is not visible outside your interpreter.
 
-- **A leading `~` is your home directory, on every platform.** `source ~/lib/util.tcl`,
-  `open ~/notes.txt`, `glob ~/Scripts/*.tcl` and `file exists ~/x` all reach
-  `$::env(HOME)`, inside a bundle load and outside one, and `~someuser/x` reaches that
-  user's home. **A user who does not exist is an error**, not a silently missing file.
+  Anything that reaches the filesystem *without* going through those commands — `exec` and its
+  redirections, `load`, and any compiled extension — sees the process working directory instead,
+  which is some unrelated directory rather than your bundle. Give those an absolute path built
+  from `$::rete::bundle_dir` (below).
+
+- **`~` and `~/…` are your home directory, on every platform — and nothing else is.**
+  `source ~/lib/util.tcl`, `open ~/notes.txt`, `glob ~/Scripts/*.tcl` and `file exists ~/x`
+  all reach `$::env(HOME)`, inside a bundle load and outside one. **`~name` is an ordinary
+  name that begins with `~`**, not another user's home: `open ~alice.log` opens a file
+  called `~alice.log` in the working directory (the bundle directory, during a load), and
+  `~root/x` is `x` inside a directory called `~root`. No user is ever looked up, so a name
+  that matches no user is not an error — opening a file that is not there is. This is what
+  lets a path built from IRC data stay where you put it: an ident is `~alice` whenever the
+  user runs no identd, and `open [file join $dir ~alice.log]` opens `$dir/~alice.log`.
   `pwd`, `cd`, `source`, `open`, `glob` and `file` are the commands this covers — the same
   six as above. Anything reaching the filesystem another way (`exec`, `load`, a compiled
   extension) gets whatever the underlying Tcl does with a tilde, which is not the same
   thing on every platform.
 
-  > **Changed in v0.8.** Rete now expands the tilde itself, because the Tcl versions it is
-  > built against do not agree about it: **Tcl 8.6 expands `~` in the filesystem commands
-  > and Tcl 9.0 does not**, and macOS ships 9.0 while Linux ships 8.6. Before this change
-  > the *same bundle* reading `source ~/Scripts/foo.tcl` read the user's file on Linux and
-  > looked for a directory literally named `~` inside the bundle on macOS.
-  >
-  > To name a file or directory that really is called `~`, write `./~` — which is what
-  > plain Tcl has always required, and is unchanged.
+  Rete expands the tilde itself, because the Tcl versions it runs on do not agree about it:
+  **Tcl 8.6 expands `~` in the filesystem commands and Tcl 9.0 does not**, and macOS ships 9.0
+  while Linux ships 8.6. Rete's rule gives one answer on both. On Linux the error for a missing
+  `~name` file quotes the path as `./~name…`, and two kinds of `glob` call return their `~name`
+  matches spelled `./~name…`: a single call that mixes a `~name` pattern with an absolute one,
+  and `glob -path ~name…` outside a bundle load. All of these name the same files as on macOS.
+
+  To name a file or directory that really is called `~`, write `./~`, as plain Tcl requires.
+
+  **`~` and `~/…` are absolute paths, so `file join` starts again at them; `~name` is a
+  relative name, so it joins like one.** `file pathtype ~/notes.txt` is `absolute`, and
+  `file join $::rete::bundle_dir ~/notes.txt` is `~/notes.txt` — the bundle directory is
+  discarded, exactly as it would be for `/tmp/notes.txt` — so
+  `open [file join $::rete::bundle_dir ~/notes.txt]` opens the file in your home directory.
+  `file pathtype ~alice.log` is `relative`, and `file join /x ~alice.log` is `/x/~alice.log`.
+  Both commands stay string operations: they do not expand the tilde. A tilde that does not
+  lead an argument is an ordinary character: `file join /x a/~/y` is `/x/a/~/y`. These answers
+  are the same on macOS and Linux.
+
+  The other string-only `file` subcommands — `dirname`, `tail`, `split`, `nativename`,
+  `rootname`, `extension` — are passed to Tcl unchanged, and on a tilde path some of them
+  differ between the two Tcl versions: `file tail ~` is `~` on Tcl 9.0 and the last part of
+  your home directory on Tcl 8.6, `file nativename ~/y` is expanded only on 8.6, and on 8.6
+  `file tail ~alice` looks the user up and raises an error when there is none. A file really
+  called `~` differs too: on Tcl 8.6 `file tail ./~` and `file split ./~` spell that part `./~`
+  where 9.0 spells it `~`, and `file join /x ./~` is `/x/~` on 8.6 and `/x/./~` on 9.0 — the
+  same file either way. Build paths with `file join` around a tilde rather than taking a tilde
+  path apart.
 
 - **The working directory is restored as soon as the entrypoint returns.** A relative
   `source` (or `open`) from a timer, a `bind` handler or a UI callback runs later, with some
@@ -265,7 +294,7 @@ a silently corrected one would be a bundle you could not find.
   `::rete::bundle_dir` is **the bundle root, set while your entrypoint runs and empty
   afterwards** — one interpreter loads every bundle you have, so a value left standing would
   name whichever loaded last. Read it at load time, as above. `[file dirname [info script]]`
-  also works and is what this example used before v0.8, but it gives you *the file's own*
+  also works, but it gives you *the file's own*
   directory: for an entrypoint at `src/main.tcl` that is `src/`, not the bundle root that
   relative paths resolve against.
 
@@ -274,12 +303,9 @@ a silently corrected one would be a bundle you could not find.
   Nothing in a `.tcl` file can change it. **Changing the `id` orphans everything the bundle
   has stored**, so pick one and keep it.
 
-  > **Changed in v0.8 (breaking).** A `# Namespace: <name>` comment in the entrypoint's
-  > first 20 lines used to override the `id`. It no longer does anything. A bundle that
-  > carried one now files its storage under its `id` and **will not see data it saved
-  > before the change**; to keep that data, set the manifest's `"id"` to what the header
-  > said. The header also made it possible for two bundles with different ids to share one
-  > another's storage without either of them being told, which is why it went.
+  A `# Namespace: <name>` comment in the entrypoint does nothing. A bundle that carries one
+  and stored data under that name finds it again by setting the manifest's `"id"` to the same
+  name.
 - If the entrypoint raises, the load **fails loudly**: the bundle is not marked loaded, the
   buffers, binds, nicklist menu items and custom commands it had already created are taken
   back, and the error text goes to the **Script Debug** buffer (`/script debug on` in
@@ -314,29 +340,55 @@ inside them:
   is not a decision about auto-load, so `/script fetch <bundle>` on an installed id leaves
   whatever you chose. `/script fetch --load <bundle>` is the exception: it switches auto-load
   **on** and loads the bundle immediately.
-
-  > **Changed in v0.8.** `/script fetch` without `--load` used to write `false` unconditionally,
-  > so re-fetching a bundle to get an update silently switched off an auto-load you had turned
-  > on. It now only writes for an id you did not already have.
 - A bundle switched off is still *installed*: it is listed by `/script list` and by the Script
   Manager, it just is not loaded at connect.
 - **A file Rete cannot read is not a file with no choices in it.** If `autoload.json` is there
   and will not decode — a hand edit that went wrong, a truncated write — every bundle
   auto-loads, because an absent key means auto-load and an unreadable file has no keys at all.
-
-  > **Changed in v0.8.** That used to happen silently, and the next choice you made replaced
-  > the file, so the rest of your choices went with it. Rete now says so, naming the file and
-  > the reason; the same notice appears when a choice cannot be written or the file cannot be
-  > removed. Fix or delete the file before making another choice.
+  Rete says so, naming the file and the reason; the same notice appears when a choice cannot be
+  written or the file cannot be removed. The next choice you make replaces the file, so fix or
+  delete it before making another choice.
 
 **Sharing a bundle**
 
 Zip the bundle directory. Both shapes install correctly — the archive can hold
 `manifest.json` at its root (zipped from inside the directory) or one wrapper directory
-containing it (zipped from outside); a single wrapper level is flattened on install.
+containing it (zipped from outside); a single wrapper level is flattened on install. **If any
+file cannot be moved out of that wrapper folder, the install is refused** with an error naming the
+file, and nothing is installed or changed — a bundle missing one of its files would otherwise
+install and fail later, when a `source` could not find it. (Hidden files in the wrapper, such as
+`.DS_Store`, are not moved and are not a reason to refuse.)
+
 `reTerm`'s `/script fetch <bundle>` and the macOS Script Manager's catalogue install
 archives this way, and extraction shells out to `unzip`, so a machine without it cannot
 install from an archive — copying the directory in by hand always works.
+
+**Links and files opened with Rete**
+
+A **`rete-script://host/path/bundle.zip`** link — clicked in a channel, or opened from a browser —
+installs the zipped bundle at `https://host/path/bundle.zip`, in Rete on macOS and on Linux, **only
+after Rete asks you**:
+
+- **Only an https `.zip`.** `rete-script://` always means https. A link whose path does not end in
+  `.zip` (any case), or that has no host, is refused with a notice, and nothing is asked or downloaded.
+- **The question comes before any network access.** It names the bundle (the link's file name), the
+  host and the full address, says Rete will download and install it, and that a script can run code:
+  use the network, read and change your files, and send on your IRC connections in your name.
+  **Cancel is the default**; declining downloads nothing.
+- **On Install Script**, the archive is downloaded over https only — a redirect to anything that is not
+  https is refused — with no shared cookies, cache or credentials, at most **10 MB**, giving up after
+  30 seconds without an answer or 2 minutes in all. It is then installed by the same importer as the
+  Script Manager's Import (the archive rules under *Sharing a bundle* above and the manifest rules
+  apply), and the downloaded file is deleted.
+- **Nothing runs at install.** The bundle has no `autoload.json` entry, so it loads at the next connect,
+  as an imported bundle does. Switch auto-load off in the Script Manager or with `/script unload` if you
+  want to read it first.
+- A failure — refused, too large, not a bundle, no network — is a notice naming the link and the reason.
+
+A bundle folder opened *with* the macOS app from outside it (Finder's Open With, on a folder whose
+name ends in `.tcl`) is installed only after the same kind of question, naming the folder and its
+path. **Cancel is the default.** The Script Manager's own Import and the catalogue's Download ask
+nothing more: you choose those in Rete's window.
 
 **Where a bundle lands**
 
@@ -349,10 +401,24 @@ leaves you with two folders claiming one id. And if `Scripts/<id>` exists but ho
 *different* bundle, **nothing is installed** — you are told which folder and which two ids,
 and renaming or removing that folder is the fix.
 
+**If `Scripts/<id>` is a plain file, or a folder that is not a bundle, the install goes ahead
+and what was there is kept.** "Not a bundle" means a folder with no `manifest.json`, or one whose
+`manifest.json` cannot be read as a manifest — the folders Rete never lists or loads (see *When a
+bundle does not appear*, below). The file or folder is moved aside to a hidden name beside the new
+bundle, `.<id>.rete-replaced-<uuid>` — for `hello`, something like `.hello.rete-replaced-1F0C…` —
+and Rete never deletes it. Rename it to get it back. An existing bundle being updated — a folder
+whose `manifest.json` reads, even if its entrypoint is missing — is replaced and its old copy
+discarded, and a link is replaced as described under *Linked bundles* below.
+
+If an install fails part-way and what was there cannot be put back, the error names the hidden
+name it is under. For a bundle being updated that is a hidden install folder Rete removes once it
+is an hour old, and the error says so; for a kept file or folder it is the
+`.<id>.rete-replaced-<uuid>` name, which Rete never removes.
+
 **Bundle ids ignore case.** `Hello` and `hello` are the same bundle. Installing,
 updating or fetching one finds the other; the catalogue shows a bundle installed
 under either spelling as installed and offers *Update*, not *Download*;
-`/script load` and `/script info` have always matched this way; and renaming a
+`/script load` and `/script info` match this way; and renaming a
 namespace to a different spelling of its own id just rewrites the manifest
 without moving anything.
 
@@ -365,40 +431,26 @@ because a manifest may declare any `id` it likes regardless of its folder name �
 bundle and a skipped folder, on every platform. On macOS the Scripts folder is
 normally case-insensitive as well, so `Scripts/Hello` and `Scripts/hello` cannot
 be separate folders there at all; on Linux they can be, and then the same rule
-applies to them. Rename one.
+applies to them. Rename one. Nothing is deleted or merged: the skipped folder keeps its files,
+its `autoload.json` entry and its stored data, and renaming it gives you two bundles again —
+with everything saved under its old id still under it.
 
-> **Changed in v0.8 (breaking on Linux).** `Scripts/Hello` and `Scripts/hello`
-> used to be listed as two bundles, with two `autoload.json` keys and two
-> `::rete::store` namespaces, while installing and fetching already treated them
-> as one. One of them is now skipped. Nothing is deleted or merged: the skipped
-> folder keeps its files, its `autoload.json` entry and its stored data, and
-> renaming it gives you two bundles again — with everything you had saved under
-> the old id still under it.
-
-**All of that applies to `reTerm`'s `/script fetch` too.** It used to write to
-`Scripts/<bundle id>` unconditionally, so fetching an id you already had under another folder
-name left you with two folders claiming it — one of which then vanished from `/script list` as
-a duplicate — and fetching an id whose folder name was taken by a *different* bundle destroyed
-that bundle. Both are gone: the target is decided before anything is downloaded, and a refusal
+**All of that applies to `reTerm`'s `/script fetch` too.** Fetching an id you already have under
+another folder name updates that folder, and fetching an id whose folder name is taken by a
+*different* bundle is refused. The target is decided before anything is downloaded, and a refusal
 prints the same sentence the macOS alert shows.
 
 **What `/script fetch` tells you.** It answers `Fetched script "<id>".`, then `auto_load = …`
 read back from `autoload.json` — so a re-fetch of a bundle you had switched on says
 `auto_load = true`, even without `--load`. With `--load` it also answers `loaded = …`, and that
 line is read from the bundles the interpreter actually holds: **a bundle whose entrypoint raises
-reports `loaded = false`**, with the reason in the Script Debug buffer, where it used to report
-`loaded = true` regardless.
+reports `loaded = false`**, with the reason in the Script Debug buffer.
 
 **A connection with no Tcl runtime still fetches.** Downloading is a disk operation, so it is
-allowed on a build without Tcl and on relay connections, which have no interpreter of their own
-— the bundle installs, `/script list` shows it, and a build or connection that has Tcl loads it.
+allowed on a build without Tcl — the bundle installs, `/script list` shows it, and a build or connection that has Tcl loads it.
 Only the loading is withheld: `/script fetch --load` there prints *"Scripting is disabled…"* —
 the same sentence `/script load`, `/script unload` and `/script rehash` refuse with — followed
 by `loaded = false`.
-
-  > **Changed in v0.8.** `/script fetch --load` used to print `loaded = true` without asking
-  > whether anything had loaded, so it said so on a connection with no interpreter and for a
-  > bundle whose entrypoint had just failed.
 
 **A failed install never costs you the bundle you had**
 
@@ -407,7 +459,8 @@ all build the new bundle somewhere else first and only put it in place once it i
 **If anything goes wrong the bundle already installed is left exactly as it was**, at its old
 version, still loadable — you get an error and nothing else changes. That covers the whole
 list: no `unzip` on the machine, `unzip` failing, a download that was cut short, a folder
-that could not be copied, a destination folder that turns out to hold a different bundle, and a
+that could not be copied, a destination folder that turns out to hold a different bundle, an
+archive whose wrapper folder could not be flattened whole (*Sharing a bundle*, above), and a
 manifest whose `id`, `entrypoint` or `files[]` names something outside the bundle (*What an `id`
 may be*, above).
 
@@ -425,7 +478,7 @@ bundle and never reported as a problem, and the next install clears it away.
 **When a bundle does not appear**
 
 Discovery is strict. Each of the following stops the bundle auto-loading, and **both
-frontends now say which one happened** — except for the two that are silent on purpose:
+frontends say which one happened** — except for the three that are silent on purpose:
 
 | The bundle has… | What you see |
 |---|---|
@@ -438,12 +491,52 @@ frontends now say which one happened** — except for the two that are silent on
 | an `id` that is not usable as a folder name — blank, `.`, `..`, containing `/` or a control character, or beginning with `.` | the directory is named, with *"its manifest.json declares the id “…”"* and the reason, in the same two places. **This is the same rule and the same sentence installing the bundle would have given you** |
 | a directory name starting with `.` | **nothing, anywhere** — hidden directories are never enumerated |
 | an `id` another bundle already uses | the directory is named, with *"its id … is already used by script bundle …"*, in the same two places |
+| a link to the same folder as another bundle | the link is named, with *"it is a link to the same folder as script bundle …"*, in the same two places — see *Linked bundles* below |
+| a link to a file, a link to nothing, or a link loop | **nothing, deliberately** — like a directory with no `manifest.json`, it never was a bundle |
 
 The scripts folder itself being unreadable is reported too, and replaces the "no script
 bundles" message rather than being added to it: an empty list is what a user with no scripts
 sees, and the two must not look the same. That covers the path **not being a folder at all** —
-a file, a link to a file, or a link to a folder — and the message says which. A folder that is
-genuinely empty is not an error and is not reported: you are simply told there are no bundles.
+a file, a link to a file, or a link to nothing — and the message says which. A Scripts folder
+that is itself a **link to a folder** is followed, and lists the bundles in the folder it points
+at. A folder that is genuinely empty is not an error and is not reported: you are simply told
+there are no bundles.
+
+**Linked bundles.** A bundle in the Scripts folder may be a symbolic link to a bundle folder kept
+somewhere else — a checkout, a synced folder. The link is followed wherever it points, **including
+outside your home folder**, and the bundle is listed and loads exactly as if the folder were in
+place:
+
+- **Its id is the manifest's `id`**, as for any bundle. A manifest that declares no `id` takes the
+  **link's** name — the name you see in the Scripts folder — and never the name of the folder it
+  points at.
+- **A bundle is loaded once, however many names reach it.** Two links to one folder, or a link
+  beside the real folder it points at, are one bundle: one is listed and the others are named
+  with *"it is a link to the same folder as script bundle …"*. **The real folder wins over a
+  link**, because it is the bundle's own folder — an update is then written into it and every link
+  to it stays valid. Between links, the link whose name is the id wins, and otherwise the
+  alphabetically-first name, the same fixed rule as for a shared id above.
+- **A bundle reached by more than one link should declare an `id` in its `manifest.json`.**
+  Without one, its id is the name of whichever link wins — so adding another link with an
+  earlier name (`a-tools` beside `tools`) changes the id, and the bundle's auto-load setting and
+  `::rete::store` data stay behind under the old one. A declared id does not depend on which
+  link wins. The skipped link's message says the same.
+- **The link's own name decides whether it is hidden.** A link whose name starts with a dot is
+  never enumerated, wherever it points.
+- **Importing a folder that is a link imports the folder it points at.** Its files are copied
+  into your Scripts folder as an ordinary bundle folder, and the linked folder is left as it was.
+- **Removing a linked bundle removes the link.** Delete and uninstall take away the link in your
+  Scripts folder and never touch the folder it points at. **Updating** one from the catalogue
+  installs the new version as an ordinary folder in place of the link, and likewise leaves the
+  linked folder exactly as it was: an install never writes through a link. (Editing the bundle's
+  files in the macOS Script Manager does change them where they live, in the linked folder —
+  which is what a link is for.)
+- **An install over a name that is some other link replaces the link the same way.** If the
+  folder name a new bundle installs under is already taken by a link that is not a bundle — a link
+  to nothing, to a file, or to a folder with no `manifest.json` — the install puts the bundle there
+  as an ordinary folder in place of the link, and never touches, creates or removes anything the
+  link pointed to. Such a link is not listed (see the table above), so this is the only way the
+  install would ever meet it. If the install fails, the link is left exactly as it was.
 
 **Bundle ids are unique, and one bundle keeps the id.** Two bundles can claim the
 same id two ways: both manifests declare it, or one declares it while the other
@@ -469,29 +562,54 @@ safe to state as *"one of these is skipped"* rather than *"one of these is
 lost"*.
 
 `/script load <name>` and `/script info <name>` answer the same way. A name that matches a
-directory which cannot be used gives the reason above; *"Unknown script bundle"* now means
-what it says — nothing on disk matches that name. `/script info` will still describe a bundle
+directory which cannot be used gives the reason above; a name that is the start of more than
+one bundle's name lists the bundles it matches, so you can type more of it; *"Unknown script
+bundle"* means what it says — nothing on disk matches that name. `/script info` will still describe a bundle
 whose entrypoint file is missing, since its manifest is readable.
 
-If a bundle you installed is not there and nothing was said about it, it is one of the two
-deliberate silences: check that the directory contains a `manifest.json` and that its name
-does not start with a dot.
+If a bundle you installed is not there and nothing was said about it, it is one of the three
+deliberate silences: check that the directory contains a `manifest.json`, that its name
+does not start with a dot, and — if it is a link — that it points at a folder that exists.
 
 **An install never destroys the bundle it is replacing** — the replacement is built in a hidden
 staging folder and swapped in only once it is known to be a bundle, so a download that fails,
 an archive that will not extract, or a `.zip` with no manifest all leave what you had exactly
 where it was.
 
-> **Changed in v0.8.** There is one failure that design cannot prevent: the swap succeeding
-> halfway, so the bundle you had is neither back in place nor replaced. It used to be reported
-> as whatever went wrong with the *install*, with no mention that your bundle had gone. It now
-> says so, and names the hidden folder it is in — `.rete-install-<uuid>-previous`, in your
-> Scripts folder. **Rename that folder back to the bundle's folder name to recover it**, and do
-> it promptly: Rete removes leftover install folders once they are an hour old.
+There is one failure that design cannot prevent: the swap succeeding halfway, so the bundle you
+had is neither back in place nor replaced. The error then says so, and names the hidden folder
+it is in — `.rete-install-<uuid>-previous`, in your Scripts folder. **Rename that folder back to
+the bundle's folder name to recover it**, and do it promptly: Rete removes leftover install
+folders once they are an hour old.
 
 Note the asymmetry in the fifth row: a bundle whose entrypoint file is missing is *listed*,
 with the error on its row, but auto-load skips it like the rest. A listed bundle is not
 necessarily a loadable one.
+
+### The `/script` command
+
+`/script` manages bundles from the input line. **It is the same command in `Rete.app`, `reTerm` and
+Rete on Linux**, with the same answers, written to the server buffer of the connection you typed it
+on. On iOS, which has no Tcl, it only says that scripting is not available there.
+
+| Subcommand | What it does |
+|---|---|
+| `/script list` | Lists the installed bundles, each with `loaded` (on this connection) and `auto_load`, and any bundle that will not load with the reason. |
+| `/script info <bundle>` | The bundle's manifest fields, `loaded` and `auto_load`. Where this connection cannot run scripts, it says why in place of `loaded`. |
+| `/script catalogue` | The ReteCloud script catalogue, marking what you have installed. |
+| `/script fetch [--load] <bundle>` | Installs a bundle from the catalogue; `--load` also switches it on and loads it (see **Sharing a bundle** above for what it answers). |
+| `/script load <bundle>`, `/script unload <bundle>` | Switches the bundle's auto-load on or off and loads or unloads it, then answers `script = …` and `loaded = …`. |
+| `/script rehash` | Re-reads the Scripts folder: each interpreter loads what auto-load allows. |
+| `/script debug on\|off` | Shows or hides the Script Debug buffer. |
+| `/script init <namespace> [title…]` | Starts a new bundle — the same as **New Script** in the Script Manager, with the same rules for the namespace and the same refusals. It creates `<namespace>/` in your Scripts folder with an empty `<namespace>.tcl` as its entrypoint and a `manifest.json` (the rest of the line is the title), then tells you where it is and to load it with `/script load <namespace>`. A namespace that is already installed is not touched. |
+
+`Rete.app` and Rete on Linux load a script into **every** connection's interpreter, so there
+`/script load`, `/script unload`, `/script rehash` and a `/script fetch` of a loaded bundle act on
+all connections, exactly as the Script Manager's buttons do — and a bundle the Script Manager is
+busy with (an update, say) answers that it is busy rather than being changed underneath it. The
+`loaded = …` they print is what the interpreters answered. In `reTerm` each connection has its own
+interpreter, and the command acts on the one you typed it in. `/script debug` is the **Show Script
+Debug** toggle in `Rete.app` and Rete on Linux, and selects the Script Debug buffer in `reTerm`.
 
 ### Command Namespace
 
@@ -530,8 +648,7 @@ proc handlerProc {arg1 arg2 ...} {
 
 > **Every handler returns `{code ?data…}`** — a control code, optionally followed by
 > data. The first word is *always* the control code. A bare `return 0` / `return 1` /
-> `return 2` is a one-element list in Tcl, so the common case is just an integer and
-> always has been.
+> `return 2` is a one-element list in Tcl, so the common case is just an integer.
 
 - **Return `0`** → Rete continues processing (other Tcl handlers, then its own logic).
 - **Return `1`** → Rete stops processing this event in Swift: no further handlers
@@ -542,8 +659,10 @@ proc handlerProc {arg1 arg2 ...} {
   the server**: membership, nick, topic and mode state are unaffected.
 - **Return `2`** → as `1`, and Rete additionally **skips the state change**. You are
   taking ownership of the event, and any resulting divergence from the server is
-  yours. Vetoing `JOIN` with `2` leaves the joiner out of the nick list; vetoing
-  `QUIT` with `2` keeps a departed user in it.
+  yours. Vetoing `JOIN` with `2` leaves the joiner out of the nick list, so a later
+  op or voice change for them is not tracked either (the `MODE` line itself still
+  shows) until the nick list is next refreshed from the server; vetoing `QUIT` with
+  `2` keeps a departed user in it.
 - A **missing** return value — a handler that ends with a bare `return`, or with a
   command that produces nothing — is `0`, silently. This is the normal case.
 - A return value whose first word is **not** `0`, `1` or `2` is a **logged script
@@ -556,58 +675,50 @@ value of its last command, so a handler ending in `set ::last $text` returns the
 and will be reported as a malformed control code. End handlers with an explicit
 `return`.
 
-Outbound events are the exception and always have been: for **`RAW_OUT`** and
+Outbound events are the exception: for **`RAW_OUT`** and
 **`MSG_OUT`** there is no line to hide and no state to keep, so `1` and `2` mean the
 same thing — *do not send this line*.
 
-**Data after the code.** The words after the control code are yours; today the only
-event that reads them is `SASL_AUTH` (below), which takes `{0 username password}`.
-Handlers for every other event should return a bare code. The shape is general so
-that "suppress this outbound line and send **this** instead" can be added to
-`MSG_OUT` and `RAW_OUT` later without changing the convention again.
+**Data after the code.** The words after the control code are yours; the only event
+that reads them is `SASL_AUTH` (below), which takes `{0 username password}`. A
+`SASL_AUTH` handler that returns `{username password}` without the leading code applies
+no override, and says so in the script debug buffer. Handlers for every other event
+should return a bare code.
 
-> **What changed on 2026-08-16, and what to check in your scripts.**
-> Two steps landed the same day. First, every inbound event's state change stopped
-> being skippable by `return 1`: before that, four handlers (`QUIT`, `TOPIC`, `MODE`
-> and `JOIN` inside a ReteCloud netjoin batch) ran your script first and dropped
-> their state change on a veto, so a filtering script silently desynchronised the
-> session from the server. If you relied on `return 1` to *prevent* a state change,
-> use `return 2`.
-> Second, the result became `{code ?data…}` and a first word that is not a control
-> code became a logged error rather than a silent `0`. **Bare `return 0` and
-> `return 1` are unaffected.** The one thing that breaks is a `SASL_AUTH` handler
-> returning `{username password}`: it needs a leading `0` now, and until you add one
-> it applies no override and says so in the script debug buffer.
+**`return 1` never prevents a state change**, on any inbound event — `QUIT`, `TOPIC`,
+`MODE` and a `JOIN` inside a ReteCloud netjoin batch included. To prevent one, use
+`return 2`.
 
 #### When a handler does not fire
 
-Some events are skipped before dispatch, so no bound handler runs at all. These are
-current behaviour, deliberately recorded here rather than smoothed over:
+Some events are skipped before dispatch, so no bound handler runs at all:
 
 - **Your own `QUIT`.** `bind QUIT` fires for other users only. Use the disconnect
   path (or `RAWIN`) if you need to see your own.
-- ~~**`JOIN`, `PART` and `QUIT` whose prefix carries no `user@host`.** Rete needs the
-  full prefix to maintain membership, and skips the event entirely without it. In
-  practice only unusual servers and some bouncers send these.~~
-  **Changed 2026-08-18 — these now fire.** A prefix that is a bare nick or a
-  servername is legal (RFC 2812 §2.3.1 makes both the user and the host optional),
-  and a bouncer or a services replay sends them routinely; Rete was losing the row
-  and the membership together, and the event with them. **`bind JOIN` is the only
-  one of these whose arguments include `user` and `host`, and it now receives them
-  as empty strings** when the prefix did not carry them — a handler that assumes
-  they are non-empty needs a guard. `PART` and `QUIT` never took either. `bind ACCOUNT`,
-  `bind AWAY`, `bind CHGHOST` and `bind INVITE` were skipped by the same rule and
-  now fire too. `bind NICK` was never skipped and is unchanged.
 - **Parting a channel whose buffer you have already closed.** When *you* part a
   channel whose buffer is hidden, Rete removes the buffer and fires no `PART`.
 - **Replayed and historical rows never reach a handler at all.** Chathistory pages,
   ReteCloud replay and log reload are shown but not dispatched, so scrolling back
   through 500 joins does not fire `bind JOIN` 500 times.
 
+**A line you hide counts as seen.** When a handler hides a message, notice, action, join,
+part, kick, topic or mode line with `1` or `2`, the chathistory Rete fetches from the server
+after a reconnect starts after that line, so it does not come back as a replayed row (which no handler could
+hide). A hidden `QUIT` or `NICK` line is the exception: if the server sends it again in that
+history, it is shown.
+
 One event accepts a control code and does nothing with it: **`REGISTERED`** appends
 no line, and the connection bookkeeping around it is not a server fact you can
 decline, so `1` and `2` are both no-ops there. Use `ENDOFMOTD` for post-connect work
 in any case.
+
+**An event whose prefix carries no `user@host` still fires.** A prefix that is a bare
+nick or a servername is legal (RFC 2812 §2.3.1 makes both the user and the host
+optional), and bouncers and services replays send them routinely. `JOIN`, `PART`,
+`QUIT`, `ACCOUNT`, `AWAY`, `CHGHOST`, `INVITE` and `NICK` all fire for such a prefix.
+**`bind JOIN` is the only one of these whose arguments include `user` and `host`, and
+it receives them as empty strings** when the prefix did not carry them — a handler
+that assumes they are non-empty needs a guard.
 
 #### Event arguments
 
@@ -625,9 +736,7 @@ proc my_rawin {line} {
 
 `RAWIN` fires for live lines only. Replayed and history rows — chathistory pages
 on direct IRC, ReteCloud reconnect replay and scroll-up history — are shown in
-the raw buffer but are not dispatched, like every other event. (Before
-2026-08-16 this was not true for `RAWIN`: a reconnect that replayed N rows fired
-it N times.)
+the raw buffer but are not dispatched, like every other event.
 
 **RAW_OUT** (outgoing raw line)
 ```tcl
@@ -647,8 +756,7 @@ Rete masks everywhere else — NickServ `IDENTIFY`, `ID`, `REGISTER`, `GHOST`, `
 line: you (`/quote`, `putserv`, `/oper`, a typed `/msg NickServ IDENTIFY …`, `/smsg`,
 `::rete::msg -sensitive`), Rete itself while it connects, or an AI agent through `send_raw`, on a
 direct IRC connection and a ReteCloud one alike.
-Returning 1 or 2 blocks the line. **This undoes the masked form** that earlier v0.8 builds gave
-`RAW_OUT` (AI access v1 and A1968), where the handler received `PASS :********` and its kin.
+Returning 1 or 2 blocks the line.
 
 > **Warning.** A `RAW_OUT` handler that logs, stores or forwards the lines it sees **will log,
 > store or forward your passwords** — your server password, your SASL password, your oper password
@@ -658,21 +766,30 @@ If a `RAW_OUT` handler raises an error, or returns something that is not `{code 
 that carries a secret (`PASS`, `OPER`, `AUTHENTICATE`, or a service login in any spelling Rete
 masks), the report in the script debug buffer does not quote the error message or the returned
 value: it says `<not shown: the RAW_OUT line it was given carries a secret>`. For any other line the
-report quotes them as before. A handler that writes the line somewhere itself — a file, a buffer,
+report quotes them. A handler that writes the line somewhere itself — a file, a buffer,
 `putlog` — still writes the password; Rete cannot stop that.
 
-**Everything else Rete shows or keeps stays masked.** The raw buffer, the transcript log, Rete's
-own log, and everything AI access can read — `raw_since`, a `send_raw` line's `AI access sent:` row
+**Everything else Rete shows or keeps stays masked** — except a line you send literally, below.
+The raw buffer, the transcript log, Rete's own log, and everything AI access can read — `raw_since`, a `send_raw` line's `AI access sent:` row
 and the AI access log — show `PASS :********`, `AUTHENTICATE ********`, `OPER <name> ********` and,
 for a service login, only the credential masked: `PRIVMSG NickServ :IDENTIFY ********`. The
 mechanism lines `AUTHENTICATE PLAIN`, `AUTHENTICATE EXTERNAL` and `AUTHENTICATE SCRAM-*`, and the
 bare `AUTHENTICATE +` and `AUTHENTICATE *`, are not secret and are shown as sent; **any other
 `AUTHENTICATE` is masked**, including a mechanism name Rete does not list and an `AUTHENTICATE`
 with more than one argument. Rete reads a line's command **after any IRCv3 `@tags` word and
-`:prefix`**, so `/quote @label=1 PASS :secret` is shown as `PASS :********` (the tags are not shown
-in the masked form), and the flood throttler treats it as the `PASS` it is. On a ReteCloud
+`:prefix`**, so `@label=1 PASS :secret` is masked as `PASS :********` (the tags are not shown in the
+masked form), and the flood throttler treats it as the `PASS` it is. On a ReteCloud
 connection the masking goes by what a line is rather than who sent it: an `OPER` with a single
 parameter is masked whole, and a service login after a `:prefix` is masked too.
+
+**A line you send literally is shown literally in your raw buffer.** On a direct IRC connection a
+line typed with `/quote`, typed into the raw buffer, or sent with `::rete::putserv` is shown in the
+raw buffer exactly as it was sent, a password included: `/quote PASS :secret` shows
+`PASS :secret`. Rete masks a credential by how you sent it, so `/pass secret`, `/oper <name>
+<password>`, `/ns identify <password>` and `/msg NickServ IDENTIFY <password>` are shown masked, and
+the same credential typed with `/quote` is not. What AI access reads (`raw_since`) is masked whichever
+way the line was sent, and on a ReteCloud connection the raw buffer masks it too, by what the line
+is.
 
 **Lines an AI agent sends pass through `RAW_OUT` too.** When AI access lets an agent send
 (`control.send`, see [`Control.md`](Control.md#sending)), each line it sends with `send_raw` goes
@@ -729,6 +846,12 @@ Exactly two things reach it:
 | typed plain text in a channel or DM buffer | that buffer's name | exactly what you typed, spacing included |
 | typed `/msg <target> <message…>`, from any buffer | the first word after `/msg` | the remaining words **joined by single spaces** |
 
+**Typed text loses its leading and trailing blanks before it is sent — with one exception.** A line
+that starts with a space or tab and whose first other character is `/` (`␠/msg NickServ IDENTIFY pw`)
+is not a command: it is sent to the buffer as text **with its leading whitespace kept**, so `text` is
+`" /msg NickServ IDENTIFY pw"`, and it fires `MSG_OUT` for that buffer, not for NickServ. Trailing
+whitespace is still trimmed.
+
 That second row is the one behavioural difference between the two, and it is not
 cosmetic: the `/msg` form is tokenised before the event fires, so `/msg #chan  a   b`
 reaches your handler as `a b`. The plain-input form is not tokenised at all and
@@ -738,8 +861,11 @@ typed, only the plain-input form will match runs of whitespace.
 **One `MSG_OUT`, possibly several wire lines.** `text` is the whole message. Rete
 splits it on newlines and chunks each line to fit the IRC line-length limit *after*
 the event, so a two-line paste fires `MSG_OUT` once and `RAW_OUT` twice, and a
-900-character message fires `MSG_OUT` once and `RAW_OUT` twice. Match on `text`; do
-not assume it is one PRIVMSG.
+1,200-character message fires `MSG_OUT` once and `RAW_OUT` three times. Match on `text`; do
+not assume it is one PRIVMSG. Each chunk leaves room for the `:nick!user@host ` the server
+puts in front of it when it relays it (a lower `LINELEN`, when the server advertises one,
+is honoured too), so the recipient receives every chunk whole; how many bytes a chunk holds
+therefore depends on your nick and host, and is never more than 510 less that prefix.
 
 **Blocking it.** `return 1` and `return 2` are the same thing here — *do not send
 this message*. A blocked message is not sent, **not echoed into your own buffer, and
@@ -747,10 +873,8 @@ not logged**: nothing records that you tried. `RAW_OUT` does not fire for it eit
 because `MSG_OUT` sits upstream of the wire line.
 
 **Only the control code is read.** Words after it are accepted and ignored — a
-handler returning `{0 something else}` sends the original message unchanged. The
-`{code ?data…}` shape exists so that "suppress this and send **this** instead" can be
-added later (see the return convention above); it is **not** wired up, and returning
-a replacement today changes nothing.
+handler returning `{0 something else}` sends the original message unchanged:
+returning a replacement message changes nothing.
 
 **What does not fire `MSG_OUT`**, although it puts a `PRIVMSG` or a `NOTICE` on the
 wire:
@@ -817,75 +941,94 @@ proc my_silence {action hostmask} {
 **ERROR**
 ```tcl
 proc my_error {text} {
-    # text: an error affecting this connection — from the server or from Rete
+    # text: an error line from the IRC server
     return 0
 }
 ```
 
-`ERROR` is the connection's **error-line** event, not the IRC `ERROR` command alone.
-It fires once for every line Rete is about to write to the server buffer as an error,
-and `text` is that line exactly. Four kinds of thing reach it:
+`ERROR` is the **IRC server's** error event. It fires once for each error line the
+server sends that Rete is about to write to the server buffer, and `text` is that line
+exactly:
 
 | Where the error came from | What `text` holds |
 |---|---|
 | The server's `ERROR` command — direct IRC, and ReteCloud when the hosted session relays one | the command's trailing parameter, **verbatim**: `Closing Link: 1.2.3.4 (Ping timeout)` |
 | An IRCv3 `FAIL` standard reply | `FAIL <command> <code> [context…]: <description>` — Rete composes that line out of the reply's parts, so it is not a wire line. `WARN` and `NOTE` are not errors and fire nothing |
-| The ReteCloud server refusing something | either the server's own words (`No access to session`) or a Rete sentence naming what was refused (`ReteCloud could not create the session (server returned create_session_error)`) |
-| Rete itself failing on a ReteCloud connection | text composed entirely by the client: `ReteCloud authentication failed: …`, `Invalid ReteCloud API URL`, `ReteCloud API link failed: …`, `ReteCloud history sync failed: …`, `Unable to send message (…)`, `disconnect_session failed: …`, `Cannot /quit: this session has no live ReteCloud API link, …`, `ReteCloud could not sync the session: …` — **and this list is illustrative, not exhaustive; see below** |
 
-The last two rows are why the argument is not a server message. On a ReteCloud
-connection the error line is the **only** thing that tells the user a session-level
-failure happened — the API link stays up, so nothing else says so — and every such
-failure is routed here on purpose.
+It also fires for the few error lines Rete writes about one message or request rather
+than about the connection: a message it received but could not read, a message the
+ReteCloud server would not send, a history page that did not load, a saved SASL password
+it could not read. Their wording is not part of this API and may change.
 
-**Nothing in the API tells you which row a given line came from.** `text` is the only
-argument, there is no code, no origin flag, and no command that reports whether this
-connection is a ReteCloud session. Matching on the wording above is matching on
-strings that are *not* part of this API and may be reworded without notice. If you
-want the server's `ERROR` command and nothing else, bind `RAWIN` and look for it
+**The connection itself failing never fires `ERROR`, and no script can hide it.** On a
+ReteCloud connection, failing to connect, authenticate, create or sync the session, or
+to take it off IRC, writes an error line to the server buffer (`ReteCloud authentication
+failed: …`, `ReteCloud API link failed: …`, `ReteCloud history sync failed: …`,
+`disconnect_session failed: …`, `Cannot /quit: …`, and so on). That line fires no
+event and is always shown, because it is often the only thing that tells the user the
+session stopped. On a direct IRC connection a lost or refused socket fires no event
+either, so a script sees the same thing on both.
+
+If you want the server's `ERROR` command and nothing else, bind `RAWIN` and look for it
 there.
 
-`return 1` suppresses the line, and on a ReteCloud connection that suppresses the
-client's only report that a connect, sync or send failed — a script that vetoes
-`ERROR` broadly makes those failures silent. `2` does nothing `1` does not: the event
-carries no session state of its own.
+`return 1` suppresses the line. `2` does nothing `1` does not: the event carries no
+session state of its own.
 
 Not an `ERROR` event: the error lines your own `/commands` produce (*"Usage: /join
-#channel [key]"*, *"Unknown command: /foo"*). Those are written straight into the
-buffer as errors and dispatch nothing.
+#channel [key]"*, *"Unknown command: /exit"*). Those are written straight into the
+buffer as errors and dispatch nothing. (A `/command` Rete does not know is **not** an
+error: it is sent to the server as typed — see **Custom commands** — and what the server
+answers arrives like any other server line.)
 
-#### Disconnecting on a ReteCloud connection — three verbs, three meanings
+#### Disconnecting on a ReteCloud connection — three verbs, two meanings
 
-`disconnect_session failed: …` in the table above is a **refusal**, and which verb
+`disconnect_session failed: …` (see **ERROR** above) is a **refusal**, and which verb
 the user reached for decides whether a refusal was even possible. A ReteCloud
 session has two things that can be taken down and they are independent — the
-session's attachment to IRC, and this client's link to the API — so the three
-controls mean three different things:
+session's attachment to IRC, and this client's link to the API — and the three
+controls make only two different choices between them:
 
 | the user does | session taken off IRC? | this client's link closed? |
 |---|---|---|
 | `/quit [msg]` | **yes** | no |
 | `/disconnect [msg]` | no | **yes** |
-| **Disconnect IRC** (sidebar / menu) | **yes** | **yes** |
+| **Disconnect IRC** (sidebar / menu) | **yes** | no |
 
 `/quit` and `/disconnect` are the exact reverse of each other, which is the
-opposite of what they mean on a direct IRC connection. `/disconnect` asks the
-server for nothing, so it can never produce a `disconnect_session failed:` line.
+opposite of what they mean on a direct IRC connection. **Disconnect IRC does what
+`/quit` does**: it asks the server to take the session off IRC and leaves this
+client's link up. `/disconnect`
+asks the server for nothing, so it can never produce a `disconnect_session failed:`
+line.
 
-**What this means for a handler.** `bind ERROR` firing with
-`disconnect_session failed: …` means **the session is still on IRC** — the server
-declined to detach it. Since 2026-08-21 the client's own view agrees whichever verb
-was used; before that date the Disconnect button wrote the refusal into the buffer
-and reported the session gone in the same second. A handler that reads that line as
-*"we have left IRC"* is wrong. **`return 1` on it suppresses the only report the
-user gets that their disconnect did not happen.**
+**What this means for the user.** A `disconnect_session failed: …` line on the server
+buffer means **the session is still on IRC** — the server declined to detach it. It
+fires no script event and no script can hide it.
 
-**`server-online` is about the *link*, not the session, and after a refused
-Disconnect IRC the two disagree — deliberately.** That verb closes this client's
-WebSocket whether or not the server accepted the detach, so `server-online` goes to
-`"0"` while the session is still on IRC and the sidebar still says so. A refused
-`/quit` leaves the link up and changes nothing at all. If your handler needs *"is
-the session on IRC"*, `server-online` is not that question on this transport.
+**A refusal changes nothing a script can see except that one line.** The line reads
+`disconnect_session failed: … The session is still connected to IRC, and this client
+is still attached to it.` — the second sentence is part of the same line. Neither `/quit` nor Disconnect IRC closes this client's WebSocket, whatever the
+server answers, so a refusal leaves `server-online` unchanged and delivers no close to
+the interpreter. The one failure that closes the link is the link itself dropping under
+the request — then the line has no second sentence and `server-online` goes to `"0"`
+as for any link loss.
+
+**`server-online` is not *"is the session on IRC"* on this transport.** It goes to
+`"0"` whenever the client handles a close: the link going down, an acknowledged
+`/quit` or **Disconnect IRC**, or the server reporting the session off IRC with a
+`state` frame. So after `/disconnect` it is `"0"` while the session is still on IRC,
+and after an acknowledged `/quit` or Disconnect IRC it is `"0"` while the link is still
+up. If your handler needs to know whether the session is on IRC, `server-online` does
+not answer that here.
+
+**An acknowledged Disconnect IRC and an acknowledged `/quit` are the same event to a
+script**. Both write the disconnect notice, clear the session's membership and
+modes, take `server-online` to `"0"`, and make the client resync the session when it
+next comes back on IRC. When there is no live API link to ask over, neither sends
+anything and both say so on the server buffer — `Cannot /quit: …` and
+`Cannot disconnect from IRC: …` respectively, neither through a script event — and the
+session is left exactly as it was.
 
 On a direct IRC connection none of this applies: the socket is the session, `/quit`
 and `/disconnect` both end it, and no line of this shape exists.
@@ -922,11 +1065,9 @@ proc my_sasl_handler {username password mechanism} {
     # Return {} or "" to indicate "no override" and let Rete use the configured
     # credentials, or return {0 newUsername newPassword} to override what is sent
     # to the server. The leading 0 is the control code every handler returns; the
-    # two words after it are the data.
-    #
-    # CHANGED 2026-08-16: this used to be a bare {newUsername newPassword} with no
-    # control code. That form now applies no override and is reported in the script
-    # debug buffer as a malformed control code. Add the leading 0.
+    # two words after it are the data. A bare {newUsername newPassword} with no
+    # control code applies no override and is reported in the script debug buffer
+    # as a malformed control code.
 
     # Example: override username and password
     set newUser "my sasl user"
@@ -936,6 +1077,17 @@ proc my_sasl_handler {username password mechanism} {
 
 bind SASL_AUTH my_sasl_handler
 ```
+
+The handler runs once per authentication attempt, when the server asks for the
+credentials; a mechanism that takes several rounds (SCRAM-SHA-256) does not run it again
+for the later rounds. The handler is given the real password, and the password it returns
+is the one Rete authenticates with. If a `SASL_AUTH` handler raises an error, or returns something that is not
+`{code ?data…}`, the report in the script debug buffer names the handler but does not quote the
+error message or the returned value, whether or not a password was configured: it says
+`<not shown: a SASL_AUTH handler is given and may return the SASL password>`. The script debug
+buffer is kept in the transcript, and either text could hold a password. A handler that writes
+the password somewhere itself — a file, a buffer, `putlog` — still writes it; Rete cannot stop
+that.
 
 **JOIN**
 ```tcl
@@ -975,8 +1127,7 @@ proc my_quit {nick message serverTime} {
 Netsplit batches (ReteCloud) dispatch one `QUIT` per split nick, so a batched quit
 reaches your handler exactly as an individual one does, and a veto applies to that
 nick alone. `message` is the pair of server names, which is what a direct IRC
-connection puts in the quit reason. **Changed 2026-08-16:** a netsplit used to write
-its lines and update membership without dispatching anything at all.
+connection puts in the quit reason.
 
 **CHANMSG** (channel PRIVMSG)
 ```tcl
@@ -1033,9 +1184,6 @@ proc my_nick {oldNick newNick serverTime} {
     # Returning 1 suppresses the nick-change lines in every channel, in the DM
     # buffer and (for your own nick) in the server buffer, and leaves the rename
     # itself alone. Returning 2 declines the rename as well.
-    #
-    # Fixed 2026-08-16: until then the lines were written as part of the rename,
-    # before your handler was called, so returning 1 here suppressed nothing.
     return 0
 }
 ```
@@ -1186,10 +1334,10 @@ proc my_ctcprpl {from target command params serverTime} {
 **Bundle variables**:
 
 - `::rete::bundle_dir` – the directory of the bundle whose entrypoint is running, and `""`
-  at every other moment (added in v0.8). It is the directory relative paths resolve against
+  at every other moment. It is the directory relative paths resolve against
   during the load, so `[file join $::rete::bundle_dir data.txt]` names the same file as a
   bare `data.txt` does there — and keeps naming it from a timer or a `bind` handler, where a
-  bare relative name no longer resolves. Capture it at load time; do not read it later. See
+  bare relative name does not resolve. Capture it at load time; do not read it later. See
   **How the entrypoint runs**.
 
 **Identity variables**:
@@ -1204,7 +1352,7 @@ proc my_ctcprpl {from target command params serverTime} {
 - `server` – IRC server name from **004 RPL_MYINFO** (falls back to the 001 prefix until 004 arrives). Prefer this over `serveraddress` when matching networks (e.g. behind ZNC).
 - `serveraddress` – configured connect host and port (`host:port`), i.e. the bouncer or direct endpoint you connected to
 - `serverdaemon` – the detected IRC daemon type (e.g., `"ircu"`, `"ircd"`, `"ratbox"`, `"hybrid"`, `"bahamut"`, `"unrealircd"`, `"inspircd"`, `"solanum"`, `"snircd"`, or `"unknown"`)
-- `server-online` – unixtime when connected to current server, or `"0"` if disconnected
+- `server-online` – unixtime when the current connection registered, or `"0"` if disconnected. The interpreter outlives a reconnect, so this is how a script tells one connection from the next
 
 **Version variables**:
 
@@ -1267,11 +1415,15 @@ These map directly onto the server's ISUPPORT tokens as seen in RPL 005.
 ```
 
 Checks if two strings are equal using IRC case-insensitive comparison (RFC 1459
-matching). This uses the same comparison logic as Rete's internal `IRCCompare`
-function, which respects the server's `CASEMAPPING` ISUPPORT token.
+matching). This is the comparison Rete itself uses for nicks and channel names, and it
+respects the server's `CASEMAPPING` ISUPPORT token.
 
 Returns `1` if the strings are equal (case-insensitive, with RFC 1459 character
 equivalences: `{}|~` == `[]\^`), `0` otherwise.
+
+Only ASCII letters and those characters are folded; every other byte must be the same, with no
+Unicode normalisation, as a server compares nicks — so a precomposed `é` and `e` followed by U+0301
+(a combining accent) are **not** equal.
 
 Example:
 
@@ -1375,7 +1527,11 @@ information.
   `scriptEditorHighlightrTheme` (Highlightr theme name for script editor)
 
 Returns a string value, or an empty string if the option is not found. Colors are
-returned in hex format (e.g., `"#FF0000"`).
+returned in hex format (e.g., `"#FF0000"`). A colour the theme leaves unset answers with the
+colour drawn in its place: `operatorBadgeColor`, `awayBadgeColor` and `botBadgeColor` the
+palette's `secondary` (else its `foreground`), and `highlightRowBackground` and
+`expandedGroupRowBackground` the defaults [Themes.md](Themes.md) gives, for the current
+appearance.
 
 **It answers on every frontend.** `theme_get` is a question about the theme, not about the
 window system, so it is not one of the commands that do nothing where there is nothing to
@@ -1389,7 +1545,9 @@ running on is actually drawing with:
   palette for the same reason. `/set theme` changes what `theme_get` answers, immediately.
   The badge and buffer-list-icon options still return SF Symbol names verbatim even though
   nothing draws them there — the name is part of the theme, and a script that passes it on to
-  something else should get it.
+  something else should get it. `scriptEditorHighlightrTheme` is answered the same way, though
+  `reTerm` has no script editor: the dark palette's value, or `github-dark` when the theme names
+  none.
 
 **Buffer-list icons answer with the effective symbol.** A theme may leave one of the seven
 `bufferList…Icon` fields out, in which case the sidebar draws Rete's built-in symbol for that
@@ -1440,17 +1598,7 @@ The option list above is the whole of what `theme_get` can answer, and **this pa
 story about reading a theme from a script** — [Themes.md](Themes.md) documents the theme
 *format*, every palette key, colour role and field a theme file may set, and says nothing about
 Tcl. Read it to learn what a theme may contain; read this list to learn what a script can ask
-for.
-
-> **Changed in v0.8.** The seven `bufferList…Icon` options are new. Every SF-Symbol-valued
-> field the theme format has is now readable from a script; before this, none of the seven was,
-> and there was nothing published to say which side of that line a field fell on.
-
-(This paragraph used to send you to a section of `Themes.md` called *"Accessing Theme
-Settings from TCL Scripts"*. There is no such section, and `theme_get` does not appear in
-that document at all — the link resolved, so nothing caught it. Filed as A1228, and closed by
-the two changes above: `Themes.md` gains no script-facing section, because there is no longer a
-line between the theme fields a script can read and the ones it cannot.)
+for. Every SF-Symbol-valued field the theme format has is readable from a script.
 
 - **Channel status**
 
@@ -1862,14 +2010,8 @@ The namespace is the **bundle's `id`** — the manifest's `"id"`, or the bundle
 directory's name when the manifest omits it. You do not declare it anywhere else, and
 nothing in a `.tcl` file can change it.
 
-> **Changed in v0.8 (breaking).** This section used to say *"scripts must have a
-> `Namespace:` metadata field defined to use storage commands"*. That was the
-> pre-manifest rule and it outlived its replacement by five months: a `# Namespace:`
-> comment in the entrypoint's first 20 lines silently **overrode** the manifest `id`, so
-> a script author following this section wrote a header that quietly re-filed their own
-> data — and two bundles that happened to name the same namespace shared storage with no
-> warning from anywhere. The header is now inert. If your script carried one, set the
-> manifest's `"id"` to what the header said to keep the data it saved.
+A `# Namespace:` comment in the entrypoint is inert. If your script carries one and saved
+data under that name, set the manifest's `"id"` to the same name to keep reading it.
 
 A bundle whose `id` cannot be determined has no namespace, and storage commands in it
 return the error *"store: script has no namespace"*.
@@ -1936,14 +2078,13 @@ return the error *"store: script has no namespace"*.
 fails** — the value is in memory for this session and gone at the next launch. Scripts should
 not try to detect it.
 
-> **Changed in v0.8.** That failure used to be completely silent. Rete now reports it to the
-> user through the same error notice it uses for its own settings — an alert on macOS and iOS,
-> a line in the app buffer in `reTerm` — naming `script_storage.json` and the reason the
-> filesystem gave. The same notice appears when the file is there and cannot be read, or holds
-> something Rete cannot parse: in both cases scripts start with nothing stored **and the next
-> `set…` replaces the file**. Repeats are collapsed, so a script writing in a loop produces one
-> notice rather than one per call. **Nothing a script can call has changed** — no return value,
-> no error, no new command.
+Rete reports the failure to the user through the same error notice it uses for its own
+settings — an alert on macOS and iOS, a line in the app buffer in `reTerm` — naming
+`script_storage.json` and the reason the filesystem gave. The same notice appears when the file
+is there and cannot be read, or holds something Rete cannot parse: in both cases scripts start
+with nothing stored **and the next `set…` replaces the file**. Repeats are collapsed, so a
+script writing in a loop produces one notice rather than one per call. A script sees none of
+this — no return value, no error.
 
 **Examples:**
 
@@ -2143,7 +2284,10 @@ proc my_greet_proc {bufferId bufferName nick} {
 - Multiple scripts may call `::rete::setnickmenuprovider`; all providers will be
   invoked and their menu items concatenated.
 - Providers are called **only when the nicklist context menu is opened**, not
-  on every UI re-render.
+  on every UI re-render. They are called each time it opens.
+- Their items appear just before the `addnickmenu` items.
+- A provider should answer quickly: if the providers have not answered within
+  a quarter of a second, the menu shows without their items.
 - Providers and their menu items are automatically cleaned up when the owning
   script is unloaded or rehashed.
 
@@ -2175,7 +2319,7 @@ The callback function will be called with **two arguments**:
 ```tcl
 proc my_storeheader_action {storeId serverName} {
     # storeId    - UUID of the IRC store/connection
-    # serverName - host:port of the connection's server, or a relay connection's name
+    # serverName - host:port of the connection's server
 }
 ```
 
@@ -2190,21 +2334,16 @@ proc my_storeheader_action {storeId serverName} {
 ```
 
 **Stability of `storeId` on this menu.** The value is the same UUID for as long as the
-store exists, so it is safe to use as a dictionary key — including for a connection Rete
-did not create from a saved configuration (a relay connection), which has no configuration
-UUID of its own and is given a per‑store one instead. It is **not** stable across restarts
-and it is **not** written to disk, so do not persist it: a store that has a saved
-configuration reports that configuration's UUID and a store that does not reports an id
-minted when the connection's store was created.
+store exists, so it is safe to use as a dictionary key. A store reports its saved
+configuration's UUID; before that configuration is attached to it — a short window while
+the connection's store is being created — it reports an id minted with the store instead.
+It is **not** stable across restarts and it is **not** written to disk, so do not persist it.
 
 **What `serverName` carries on the store menus.** For a connection with a saved IRC
 configuration it is that configuration's **first server**, written as `host:port` — for
 example `irc.libera.chat:6697` — with an IPv6 address written without brackets. It is the
 configured server, not whichever fallback server the connection is using at the moment, and
-it changes when the connection is edited. A relay connection has no IRC configuration, so it
-carries the connection's name instead: the relay URL's host for a relay connection (the whole
-URL if it has no host), and the IRC server's name for a server reached through that relay. It
-is an empty string if neither is known yet. The same value is passed to
+it changes when the connection is edited. It is an empty string if it is not known yet. The same value is passed to
 `addmenubutton` callbacks and to a `setstoreheadermenuprovider` provider.
 
 - **Add channel buffer menu item**
@@ -2317,7 +2456,7 @@ The callback function will be called with **two arguments**, identical to
 ```tcl
 proc my_storemenu_action {storeId serverName} {
     # storeId    - UUID of the IRC store/connection
-    # serverName - host:port of the connection's server, or a relay connection's name
+    # serverName - host:port of the connection's server
 }
 ```
 
@@ -2333,9 +2472,8 @@ proc my_storemenu_action {storeId serverName} {
 
 **Stability of `storeId` on the top‑level store menu.** It is the same value the store
 header menu passes for the same connection, and it is stable in the same way: the same UUID
-for as long as the store exists, including for a relay connection, which has no
-configuration UUID and reports its per‑store id. It is not stable across restarts and must
-not be persisted. `serverName` is the value described under the store header menu above.
+for as long as the store exists. It is not stable across restarts and must not be persisted.
+`serverName` is the value described under the store header menu above.
 
 - **Channel buffer menu provider**
 
@@ -2441,8 +2579,7 @@ proc my_greet_proc {bufferId bufferName nick} {
 ### Helper commands (sending commands)
 
 In addition to getters, Tcl scripts can send commands to the IRC server via
-the following helpers. All of them operate on the current connection
-(`IRCStore.transport`).
+the following helpers. All of them operate on the current connection.
 
 - **Raw lines**
 
@@ -2456,16 +2593,22 @@ Example:
 ::rete::putserv PRIVMSG #channel :Hello from Tcl
 ```
 
+**The line is sent as written; only CR, LF and NUL are touched**, as RFC 2812 forbids only those
+in a line — for `::rete::putserv` and `/quote` alike. A CR or LF at either end is dropped (it is
+the line's own ending), and the line is cut at its first CR, LF or NUL anywhere else, so one call
+sends at most one line. Everything else goes out byte for byte, ends included: a VT, FF, U+0085,
+U+2028 or U+2029 at the start or end of the line is sent. A typed `/quote` sends the line exactly as
+typed: only the spaces and tabs between `/quote` and the line are dropped, because they separate the
+command from its argument, so `/quote <VT>PING x` sends `<VT>PING x`.
+
 **A raw line is at most 510 bytes, not counting its message tags when the server takes them**
 — on a direct connection, for `::rete::putserv` and `/quote` alike. On a connection that has
 negotiated the `message-tags` capability, a line that starts with IRCv3 tags (`@key=value;… `) has
 a tag section up to its first space, and the 510 applies to the message after it: a longer
 message is cut at 510 bytes and a notice says so (`Your <VERB> to <target> was <N> bytes and IRC
 allows 510, so the last <M> bytes were not sent, starting at: …`), but **the tags are never cut**.
-**Without `message-tags` the whole line counts**, tags included, and is cut at 510 bytes as it
-always was — such a server would read the tags as part of the message anyway. Until 2026-10 the
-tag section counted toward the 510 on every connection, so a tagged line could be cut through its
-tags. **With `message-tags`, tag data over 4094 bytes is not sent at all**: the line is dropped
+**Without `message-tags` the whole line counts**, tags included, and is cut at 510 bytes — such
+a server would read the tags as part of the message anyway. **With `message-tags`, tag data over 4094 bytes is not sent at all**: the line is dropped
 and a notice says
 `Your <VERB> to <target> had message tags longer than 4094 bytes, so the line was not sent.`
 (without ` to <target>` when the command names none). Without `message-tags` there is no 4094
@@ -2495,6 +2638,38 @@ behave like the corresponding `/join`, `/part`, `/msg`, `/notice`, `/ctcp`,
 typed in the client, with `putserv` exposing raw access to the underlying
 connection.
 
+The last argument of `::rete::msg`, `::rete::notice` and `::rete::action` (the text),
+`::rete::part` and `::rete::kick` (the reason), `::rete::topic_set` (the new topic),
+`::rete::quit` (the message), `::rete::silence` (the input) and `::rete::ctcp` (the
+parameters) takes every remaining argument and joins them with single spaces, so
+`::rete::msg #channel Hello world` and `::rete::msg #channel "Hello world"` send the same text.
+
+**A reason is cut so the server can relay it whole.** `::rete::part`, `::rete::kick` and
+`::rete::topic_set` — and `/part`, `/kick` and `/topic` — leave room
+in the line for the `:nick!user@host ` the server puts in front of it when it relays it, exactly as
+a `::rete::msg` chunk does (see `MSG_OUT`). These are one-line commands, so a longer reason is **cut, not split**, on a
+character boundary, and a notice says so: `Your <VERB> to <target> was <N> bytes and IRC allows <M>
+once the server adds your address, so the last <K> bytes were not sent, starting at: …`. A quit message (`::rete::quit`, `/quit`) is sent as typed. A topic (`::rete::topic_set`, `/topic`) is also cut, on a character boundary and without a notice, to the server's advertised `TOPICLEN`; a topic the cut would leave empty is not sent. The server's own `KICKLEN` still applies on top. `::rete::putserv` and `/quote` are
+not cut this way.
+
+**A line still waiting when its connection ends is not sent.** Commands go out one
+at a time, paced by the flood throttler, so a burst can still be waiting when the connection
+ends. If the user disconnects — the Disconnect button, or a typed `/quit`, which does not wait
+behind lines already queued — every line still waiting is dropped: one the throttler was already
+holding is reported in its buffer as `Not sent (disconnected): …`, and so is every later paced
+line for that connection until the next connect — one notice per chunk, so a long message that was
+mid-way through its chunks reports each chunk it did not send. A script command that had not
+started yet is dropped **without** a notice. The
+notice quotes a PRIVMSG or NOTICE whole, and any other command — or a service login to any target
+of a comma list — by its verb and first target only, so it never repeats a password. After an
+unexpected drop or a reconnect — the user's, or the automatic one after the link is lost — nothing
+queued for the old connection is sent, and each line **the user** typed that was dropped gets the
+same `Not sent (disconnected): …` notice. **A line a script sent that is dropped this way gets no
+notice, and the command that sent it reports nothing**: it returned when the line was queued, so a
+script cannot learn from it that the line never went out. **A line is
+never written to a connection other than the one it was queued for.** `::rete::quit` is a script
+command like the others and goes out after the script's earlier ones.
+
 **One exception, and it is deliberate: `::rete::msg` is not the same as typing
 `/msg`.** A typed `/msg` dispatches `MSG_OUT` first and can be blocked by a handler;
 `::rete::msg` fires no `MSG_OUT` at all, so a script can send from inside its own
@@ -2510,7 +2685,7 @@ line, it receives the real text (see `RAW_OUT` under **Event arguments**). Like 
 `MSG_OUT` (as plain `::rete::msg` does not), and the ordering note above applies
 unchanged.
 
-On a connection that cannot mask the text (a ReteCloud session, a relay), it
+On a connection that cannot mask the text (a ReteCloud session), it
 **sends nothing** and raises a Tcl error:
 
 ```
@@ -2524,18 +2699,27 @@ call in `catch` if you want to handle it.
 Options come before the target. Any other word beginning with `-` in that position
 is an error — `unknown option "-secret": must be -sensitive` — so to send to a
 target that begins with `-`, end the options with `--`:
-`::rete::msg -- -target text` (or `::rete::msg -sensitive -- -target text`).
-
-**Changed:** before this option existed, `::rete::msg` sent to whatever its first argument
-was. A first argument beginning with `-` is now read as an option, so `::rete::msg -foo hello`
-raises `unknown option "-foo": must be -sensitive` instead of sending to `-foo`. Targets that
-begin with `-` are not valid IRC nicks or channels, so real scripts should be unaffected; if
-your script computes a target that might, end the options with `--`.
+`::rete::msg -- -target text` (or `::rete::msg -sensitive -- -target text`). So
+`::rete::msg -foo hello` raises `unknown option "-foo": must be -sensitive` rather than sending
+to `-foo`; if your script computes a target that might begin with `-`, end the options with `--`.
 
 ### Custom commands
 
 Scripts can register custom commands that will be called when the user types
 `/command` in the input field. Custom commands can override native commands.
+
+**A `/command` that neither Rete nor any script defines is sent to the server as typed**:
+`/knock #chan please` goes out as `KNOCK #chan please` — the command name
+upper-cased, the rest unchanged — and fires `RAW_OUT` like any other line. A script
+command is looked up first, so registering a name takes it away from the server, and
+removing it gives it back. A line that carries a credential by the client's masking
+rules (`NS`, `NICKSERV`, `CS` or `CHANSERV` with a login verb such as `IDENTIFY`, `PASS`,
+`AUTHENTICATE`) reaches the server in full and is shown masked in the raw buffer;
+`RAW_OUT` sees the real line, as it does for every sensitive line. Two kinds of name
+still answer *"Unknown command: /x"* and send nothing: a word that is not letters and
+digits (`/@x`, `/#chan`), and a command one of Rete's apps owns — `exit`, `help`, `set`,
+`server`, `network`, `control`, `buffer`, `raw`, `script`, `rowaudit` — typed where that
+app's input does not claim it (for example `/exit` on macOS).
 
 - **Register a custom command**:
 
@@ -2775,7 +2959,7 @@ without being unloaded:
 | Unloaded | disarmed |
 | Reloaded | disarmed, then re-armed by the new run of the entrypoint |
 | Load fails part-way through the entrypoint | disarmed, along with its binds and commands |
-| Its connection goes away, or the interpreter is destroyed | disarmed |
+| The interpreter is destroyed — the network is removed or closed, or `/script rehash` | disarmed |
 
 So a timer armed at the top of an entrypoint does not accumulate a second copy
 each time you reload the bundle while developing it, and a timer armed on the
@@ -2788,10 +2972,9 @@ with `killtimer`/`killutimer`. The last row of the table is the exception: the
 interpreter's own teardown disarms **every** timer, owned or not, because nothing
 survives the interpreter it would fire into.
 
-**Read that last row with "How the entrypoint runs" beside it.** On a ReteCloud
-session the API link dropping is not the connection going away, so the interpreter
-is not destroyed and your timers keep their schedule across the reconnect. On direct
-IRC a dropped socket is the connection going away, and they are disarmed.
+**Read that last row with "How the entrypoint runs" beside it.** A reconnect does not
+destroy the interpreter — on direct IRC or on ReteCloud — so your timers keep their
+schedule across it, and keep firing while the network is disconnected.
 
 A timer that ticks in the instant one of these stops lands is dropped silently —
 it is noted in the Script Debug buffer at `debug` level, not as an error. Timers
@@ -2828,8 +3011,8 @@ Rete maps debug verbosity levels with `script` as the theme `category` and `erro
 
 ### Frontend identity and capabilities
 
-Rete ships more than one frontend — `Rete.app` on macOS and `reTerm` in a terminal — and
-they run the same scripts. Two commands let a script find out where it is.
+Rete ships more than one frontend — `Rete.app` on macOS, Rete on Linux, and `reTerm` in a
+terminal — and they run the same scripts. Two commands let a script find out where it is.
 
 - **Which frontend is running:**
 
@@ -2841,12 +3024,21 @@ Returns a short, stable identifier:
 
 | Value | Frontend |
 |---|---|
-| `rete` | `Rete.app`, the macOS client |
-| `reterm` | `reTerm`, the terminal client |
+| `rete` | Rete: `Rete.app` on macOS, and Rete on Linux |
+| `reterm` | `reTerm`, the terminal client, on macOS and Linux |
 | `unknown` | the host did not identify itself |
 
 `unknown` is a normal answer, not an error — treat it as "some frontend, don't assume".
 The command never fails and never returns an empty string.
+
+Rete on Linux is the same product as `Rete.app` and answers `rete` too: a script behaves
+the same in both. **To tell the operating system apart, use Tcl's own `$tcl_platform(os)`**
+— `Darwin` on macOS and `Linux` on Linux, on every frontend (Rete has no command of its own
+for it):
+
+```tcl
+::rete::debug "[::rete::frontend] on $::tcl_platform(os)"   ;# e.g. "rete on Linux"
+```
 
 - **Whether a feature is available:**
 
@@ -2858,7 +3050,7 @@ Returns `1` or `0`. Defined names:
 
 | Name | True when |
 |---|---|
-| `ui` | the frontend can actually present `::ui::*` views and controls |
+| `ui` | the frontend can actually present `::ui::*` views and controls — `1` in `Rete.app` and in Rete on Linux, `0` in `reTerm` |
 
 An unrecognised name returns `0` rather than raising an error, so a script written for a
 later version of Rete can ask about a capability this version has never heard of and get a
@@ -2884,7 +3076,11 @@ on every frontend; see **Frontends without a UI** at the end of it.
 
 ### Script UI API (`ui::` namespace)
 
-Scripts can build script-driven windows and forms using the `::ui::` namespace.
+Scripts can build script-driven windows and forms using the `::ui::` namespace. `Rete.app` and
+Rete on Linux both present them, from the same view file and the same commands; `reTerm` does
+not (see **Frontends without a UI** below). Rete on Linux draws each view as its own window,
+widget for widget as `Rete.app` does; what differs there is listed under **Rete on Linux**
+at the end of this section.
 
 **View:**
 
@@ -3082,6 +3278,19 @@ top level of the script as well as from a handler.
 ::ui::table clear <elemHandle>
 ```
 
+`-data` is a Tcl dict of column name to cell text, however you build it — all of these are
+the same row:
+
+```tcl
+::ui::table add $tbl -id r1 -data [dict create Player $nick Score "10 pts"]
+::ui::table add $tbl -id r1 -data [list Player $nick Score "10 pts"]
+::ui::table add $tbl -id r1 -data {Player alice Score {10 pts}}
+```
+
+A repeated key keeps its last value, as `dict get` does. Text wrapped in one extra pair of
+braces — `-data "{Player alice Score {10 pts}}"` — is read as the dict inside it. A `-data` that is not a dict (an odd number of words,
+or unbalanced braces) adds the row with no cells; it is not an error.
+
 **Binding:**
 
 - **Bind an event** (returns a token for unbind):
@@ -3102,11 +3311,22 @@ top level of the script as well as from a handler.
 ::ui::alert -message <text> ?-title <text>? ?-style error|warning?
 ```
 
-Shows a modal dialog with a badge on the left and the message text on the right. **-style** sets the badge: `error` (red, default) or `warning` (orange). Default **-title** is `Error`; use `-title` to override (e.g. `-title "Validation"`).
+Shows a modal dialog with a badge on the left and the message text on the right. While it is open, Rete keeps receiving and showing messages in every buffer, and the script keeps running. **-style** sets the badge: `error` (red, default) or `warning` (orange). Default **-title** is `Error`; use `-title` to override (e.g. `-title "Validation"`).
 
 **Events:** `button` → `onClick`; view window → `onClose`; `table` → `onSelect`, `onDoubleClick`; `input` → `onSubmit` (Enter key; `::ui(event) data value` is the field text).
 
 When an event fires, the script runs on the serial queue with `::ui(event)` set to a dict: `type`, `target`, `view`, `data`.
+`data` is itself a dict, and every key and value in it — and `type`, `target` and `view` — is
+exactly one Tcl word holding the text as it was, with nothing substituted: an `onSubmit` of
+`a b c` is `value {a b c}`, so `[dict get $::ui(event) data value]` is the whole field. (Before
+this version a value with a space was split into extra keys, and `value` held only its first
+word.)
+
+```tcl
+::ui::bind $inp onSubmit {
+    set text [dict get $::ui(event) data value]   ;# the whole line, spaces and all
+}
+```
 
 **Namespacing:** Element handles are generated as `<connectionId>::<scriptNamespace>::<viewInstance>::<localElementId>`. Scripts use local ids from the JSON (e.g. `tblScores`, `btnSave`); the app applies the prefix.
 
@@ -3134,6 +3354,22 @@ your script builds itself (`[file join [file dirname [info script]] my_view.json
 just an unregistered name and the call fails.
 
 **Behaviour:** UI events run your Tcl on the connection serial queue; UI updates are applied on the main thread. The app does not block the serial queue waiting for the main thread, so your handlers can safely call UI commands.
+
+#### Rete on Linux
+
+Rete on Linux presents every `::ui::*` view, widget, event and alert above, with the same
+layout file, the same handles, the same event names and the same `::ui(event)` data as
+`Rete.app`. Only the drawing is the desktop's own:
+
+- **Colours.** A container's `background` and `borderColor` names are drawn in the colours
+  `Rete.app` uses for them, chosen for the light or dark appearance in effect when the window
+  opens; a window does not recolour if the appearance changes while it is open.
+- **A vertical container's background and border** are drawn once, around all of its children.
+  (`Rete.app` draws them around each child, which looks the same for a container with one
+  child — the usual case.)
+- **A table row** fires `onSelect` on a click, and a double click fires `onSelect` for its
+  first click and then `onDoubleClick`.
+- **Alerts** use the desktop's error and warning icons, in the same red and orange.
 
 #### Frontends without a UI
 

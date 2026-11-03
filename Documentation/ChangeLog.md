@@ -1,0 +1,67 @@
+v0.9 - unreleased
+====================
+* **Rete for Linux:** a new graphical app for Linux (GTK 4), with the sidebar, message pane, nick list,
+  topic bar, desktop notifications and the same settings as reTerm.
+* **AI access:** let an AI agent such as Claude Code read your IRC sessions over a local connection
+  protected by a token, and optionally send lines on your behalf. Off by default.
+* **Log search:** logs are now kept in a database, and the Log Viewer can search every buffer of a
+  network at once. Copied log lines use a fixed 24-hour time. The Log Viewer shows messages in their
+  colours, and log export can keep the IRC formatting codes.
+* **Sensitive messages:** `/smsg` sends a message that Rete hides everywhere it shows or stores it,
+  while the server receives it in full.
+* **Reconnecting:** a connection that drops reconnects by itself, whether or not the network connects
+  at launch.
+* **Commands:** a `/command` Rete does not know is sent to the server, and a line that starts with a
+  space is sent as text, keeping its leading spaces.
+* **reTerm:** reorder and hide buffers and choose per buffer what is logged, highlighted and shown as
+  activity; auto-away; mouse support and pasting several lines into the input line; a coloured nick
+  list and buffer list; Tab completion for command arguments and settings; status markers in the nick
+  list, folded join/part lines that open and close with a click or `/fold`, and unread counts drawn as badges.
+* **Themes:** reTerm follows the theme in its header, buffer list, status bar and input line, and
+  highlighted lines fade out as in Rete; Rete for Linux draws buffer-type icons in the sidebar and
+  icon badges on join, part, quit, notice, info, topic and action lines; every app draws the
+  selected buffer in the theme's selection colours; themes can colour the date shown between days; on iOS and Linux the topic bar shows its colours,
+  with clickable links and channels, and iOS shows your own details above the server window.
+  Every app follows the theme's colours, with the same defaults, and Rete for Linux its fonts too;
+  the theme editor can set the invite, secondary and date colours. A theme no longer carries a light
+  or dark preference: the app's appearance setting chooses.
+* **Scrolling back:** scrolling up past the loaded lines reads older messages from your saved log, and
+  then from the server where it keeps history, in every app. Rete and Rete for iOS mark the place
+  where the server could not supply missing history.
+* **Nick list (macOS and Linux):** drag its divider to set its width, which every channel keeps;
+  double-click the divider to go back to automatic, which now fits the nicks in the channel. A long nick
+  is shortened instead of wrapping.
+* **reTerm on macOS** can use the macOS app's client certificate.
+* **Scripting:** several changes to `::rete::` commands are not backwards compatible — see
+  [Scripts.md](Scripts.md).
+* **Links and nicks:** addresses starting with `www.` are clickable links, and a nick written in parentheses
+  or quotes, like (alice), is coloured and clickable. A link at the end of a sentence leaves the full stop,
+  comma or bracket after it out of the link.
+* **Settings with `/set`:** `/set` opens a table of every setting in Rete and Rete for Linux: click a value
+  to change it in place. `/set` now reaches every setting in Preferences, including link previews, image
+  loading, the media bar, appearance and font size.
+* **Rete Cloud sign-in** is kept as a single keychain item. If you sign in with a username and password,
+  you will be asked to sign in once more after updating.
+* **Removed:** WeeChat relay connections.
+
+v0.7 - 13 April 2026
+====================
+* Theme editor
+* Configurable timestamp format
+* Nick colouring configurable
+* Auto-away
+* Auto-completion suggestions for /commands
+* Do not clear SASL config when disabled
+
+v0.6pl2 - 18 March 2026
+====================
+* Fixed a bug causing long messages to become clamped
+* Added support for SASL SCRAM-SHA-256
+* Refactored how we track last activity of a user
+* Added support for /LIST
+* Changing fontsize will change the font size of the input bar too.
+
+v0.6 – 10 March 2026
+====================
+* Initial release of full-functioning Rete.
+* Major refactor since previous test builds.
