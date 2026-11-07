@@ -51,7 +51,7 @@ It is not redundant with the bucket, and neither figure is decorative. Measured 
 
 ## Keys — all platforms
 
-62 keys, present in both full products.
+63 keys, present in both full products.
 
 | Key | Aliases | Accepted values | Default | What it does |
 |---|---|---|---|---|
@@ -80,7 +80,8 @@ It is not redundant with the bucket, and neither figure is decorative. Measured 
 | `highlight_notification_sound` | `highlight_sound` | `bool` | `true` | play sound with highlight notifications. |
 | `highlight_notifications` | — | `bool` | `true` | desktop notifications for highlights: banners in the macOS app, desktop notifications in ReteCross on Linux. reTerm shows none. |
 | `image_embeds` | `image_embed_mode`, `images` | `click_to_load \| blur \| show` | `click_to_load` | what an image link in a message does before you click it: click_to_load requests nothing, so the image host never sees you; blur downloads it and hides it; show downloads and displays it. Preferences' Images in messages. Default click_to_load. |
-| `log_retention_days` | `log_retention` | `int` (0…36500) | `0` | days of message log to keep; older rows are pruned (0…36500, default 0 = keep forever). |
+| `log_max_rows_per_buffer` | `log_max_rows` | `int` (0…1000000) | `0` (iOS: `5000`) | rows of message log to keep per channel or query; the oldest are pruned (0…1000000, 0 = no limit). Unset, the default for this platform applies; /set list shows the value in use. |
+| `log_retention_days` | `log_retention` | `int` (0…36500) | `0` (iOS: `60`) | days of message log to keep; older rows are pruned (0…36500, 0 = keep forever). Unset, the default for this platform applies; /set list shows the value in use. |
 | `max_buffer_rows` | `max_rows` | `int` (100…50000) | `500` (iOS: `250`) | max rows per buffer before purge (100…50000). Unset, the engine's default for this platform applies; /set list shows the value in use. |
 | `media_apple_music` | — | `bool` | `false` | the macOS app's media bar offers Apple Music. Other apps do not read it. Default false. |
 | `media_share_template` | — | `string` | `I’m listening to %TRACK% by %ARTIST% on %SOURCE%` | the message the macOS app's media bar shares: %TRACK%, %ARTIST%, %SOURCE% and %URL% are filled in. |

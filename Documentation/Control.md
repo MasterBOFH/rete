@@ -685,9 +685,8 @@ is before the tap keeps it, and every line is screened again before it leaves (s
 screened line is dropped and counted in `withheld`. A line longer than 2,048 bytes
 is stored cut short, ending `…[+N bytes]` with the number of bytes dropped.
 
-A ReteCloud session's raw lines are its JSON transport frames, not IRC lines. **The frames it
-receives reach the tap only while that session's raw buffer is shown**; the frames it sends always
-do.
+A ReteCloud session's raw lines are its JSON transport frames, not IRC lines: the frames it
+receives and the frames it sends, whether or not its raw buffer is shown.
 
 ### `raw_since`
 
