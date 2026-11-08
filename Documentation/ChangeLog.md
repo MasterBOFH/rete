@@ -1,5 +1,6 @@
 v0.9 - unreleased
 ====================
+* **Commands:** a reference of every command, with its arguments, examples and which apps have it, is on the website.
 * **iOS and bouncers:** connect to ReteCloud and to GoBNC bouncers at the same time, with a lighter
   connection that only streams the channel you are reading. Choose which networks this device shows,
   per network. A GoBNC bouncer with a self-signed certificate is trusted on first use and pinned; sign
@@ -14,17 +15,32 @@ v0.9 - unreleased
   included. On iOS, the Block list and the nick list's user details arrive with the connection.
 * **iOS push:** push notifications on every backend, end-to-end encrypted. A buffer's Highlight switch
   now applies on every device.
+  A burst of messages from one person becomes a single notification that counts them, and only the
+  first in a minute makes a sound; Rete for Mac and Rete for Linux do the same with their own notifications.
+* **iPad and landscape:** on an iPad, and on an iPhone in landscape, the buffer list and nick list sit
+  beside the chat; swipe either away and back. In landscape the channel's name, modes and topic share
+  one row.
+* **Images:** tap an image to see it full screen, zoom and pan, and share or save it; Rete for Mac
+  opens it in its own window.
+* **Channel modes and lists:** on iOS, tap a channel's modes to view or change them, with its ban,
+  exception, invite and quiet lists; on every app the channel lists are fetched fresh from the server
+  when shown.
+* **Topic:** edit a channel's topic on iOS where you may set it; `/topic -clear` clears a topic on
+  every app.
+* **Copying messages:** a copied line reads `[time] <nick> text`, the same on every app; on iOS, a long
+  press copies a message or lets you select part of it.
 * **iOS message log:** the phone keeps 60 days and 5,000 messages per channel or query by default,
   since your server holds the history; change either in Settings. On every app, `/set` can now also
   cap the log per channel or query.
 * **Rete for Linux:** a new graphical app for Linux (GTK 4), with the sidebar, message pane, nick list,
   topic bar, desktop notifications and the same settings as reTerm.
 * **ReteCloud on Linux, including image hosting:** sign in to ReteCloud from Rete for Linux's settings, and
-  upload images from the input line. Image upload now needs only a ReteCloud account, on every platform.
+  upload images from the input line: choose, paste or drop an image, add a comment and choose when it expires.
+  Image upload now needs only a ReteCloud account, on every platform.
 * **AI access:** let an AI agent such as Claude Code read your IRC sessions over a local connection
   protected by a token, and optionally send lines on your behalf. Off by default.
 * **Log search:** logs are now kept in a database, and the Log Viewer can search every buffer of a
-  network at once. Copied log lines use a fixed 24-hour time. The Log Viewer shows messages in their
+  network at once, and finds Rete's own status lines by the words they show. Copied log lines use a fixed 24-hour time. The Log Viewer shows messages in their
   colours, and log export can keep the IRC formatting codes.
 * **Sensitive messages:** `/smsg` sends a message that Rete hides everywhere it shows or stores it,
   while the server receives it in full.
@@ -36,6 +52,11 @@ v0.9 - unreleased
   activity; auto-away; mouse support and pasting several lines into the input line; a coloured nick
   list and buffer list; Tab completion for command arguments and settings; status markers in the nick
   list, folded join/part lines that open and close with a click or `/fold`, and unread counts drawn as badges.
+* **reTerm keys:** the input line has a cursor and the usual terminal editing keys (Ctrl+A, Ctrl+E,
+  Ctrl+U, Ctrl+K, Ctrl+W and more); Alt+Up and Alt+Down move the current buffer in the buffer list;
+  Down on a typed line clears it and Up brings it back; `/help keys` lists them. The top of a transcript says when PageUp can load older messages.
+* **reTerm rules:** `/colour` colours nicks and `/highlight` chooses which messages are highlighted, on
+  the current network, with the same rules as Rete; a colour can be a name such as `yellow`.
 * **Themes:** reTerm follows the theme in its header, buffer list, status bar and input line, and
   highlighted lines fade out as in Rete; Rete for Linux draws buffer-type icons in the sidebar, and
   Rete for Linux and iOS draw icon badges on join, part, quit, notice, info, topic and action lines; every app draws the

@@ -574,7 +574,12 @@ buffer is full, so the reader has a gap it cannot fill; it is always `false` wit
 
 A message is matched on its sender nick and its payload's text-bearing fields (message text, a
 part or quit reason, a kick victim and reason, a new nick, a topic, mode strings, and so on) —
-never on rendered text. Raw IRC lines are never searched or returned.
+never on rendered text. Raw IRC lines are never searched or returned. One exception: a status
+line that Rete words itself — a hosted session's report about connecting, disconnecting,
+`/quit` or a refused send, and the note that a line was cut at IRC's length limit — is also
+matched on the fixed words it is shown with, each fixed part of the sentence as a field of its
+own (so `Cannot /quit` finds that report, but a substring that runs from the fixed words into
+the report's own text does not).
 
 - **`substring`** ignores case and takes every character literally.
 - **`glob`** is an IRC glob over each **whole** field, ignoring case: `*` any run, `?` one
@@ -820,7 +825,7 @@ subscription is reported as `session_disconnected` or `buffer_gone` (see `list_s
 - **`from`** — the sender nick (the message object's `from`), ignoring case.
 - **`queries: true`** — only messages in a query (private message) buffer, a new one included.
 - **`match`** — `search_messages`' matching, over the same fields (the sender and the payload's
-  text-bearing fields): with **`match_mode`** `substring` (the default) a case-insensitive
+  text-bearing fields, but not a status line's fixed words): with **`match_mode`** `substring` (the default) a case-insensitive
   substring, with `glob` an IRC glob over a whole field.
 - **`mentions: true`** — the session's **current** nick, read when the batch the message arrives
   in is matched (so a nick change is followed; see *When an event arrives*), appears in one of the message's text fields — the fields

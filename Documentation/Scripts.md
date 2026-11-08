@@ -2644,6 +2644,9 @@ The last argument of `::rete::msg`, `::rete::notice` and `::rete::action` (the t
 parameters) takes every remaining argument and joins them with single spaces, so
 `::rete::msg #channel Hello world` and `::rete::msg #channel "Hello world"` send the same text.
 
+`::rete::topic_set #channel` with no topic asks the server for the channel's topic;
+`::rete::topic_set #channel {}` (an empty or blank topic) clears it, as `/topic -clear` does.
+
 **A reason is cut so the server can relay it whole.** `::rete::part`, `::rete::kick` and
 `::rete::topic_set` — and `/part`, `/kick` and `/topic` — leave room
 in the line for the `:nick!user@host ` the server puts in front of it when it relays it, exactly as
@@ -2718,8 +2721,9 @@ rules (`NS`, `NICKSERV`, `CS` or `CHANSERV` with a login verb such as `IDENTIFY`
 `RAW_OUT` sees the real line, as it does for every sensitive line. Two kinds of name
 still answer *"Unknown command: /x"* and send nothing: a word that is not letters and
 digits (`/@x`, `/#chan`), and a command one of Rete's apps owns — `exit`, `help`, `set`,
-`server`, `network`, `control`, `buffer`, `raw`, `script`, `rowaudit` — typed where that
-app's input does not claim it (for example `/exit` on macOS).
+`server`, `network`, `control`, `log`, `buffer`, `raw`, `script`, `rowaudit`, `mouse`, `fold`,
+`colour`, `highlight` — typed where that app's input does not claim it (for example `/exit` on
+macOS).
 
 - **Register a custom command**:
 
