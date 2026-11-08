@@ -1,4 +1,4 @@
-v0.9 - unreleased
+v0.9 - 8 November 2026
 ====================
 * **Commands:** a reference of every command, with its arguments, examples and which apps have it, is on the website.
 * **iOS and bouncers:** connect to ReteCloud and to GoBNC bouncers at the same time, with a lighter
