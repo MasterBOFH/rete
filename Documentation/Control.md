@@ -167,8 +167,7 @@ frontend's token does not change the other's.
   names — under the same service, account `mcp-token` for Rete and `mcp-token-reterm` for reTerm. The token is **base64-encoded there, not encrypted**. The file is mode `0600`, its
   directory is created `0700`, and the file is replaced atomically, so it is never readable by
   others, not even for a moment. A file found wider than `0600` — and `~/.rete` found wider than
-  `0700` — is tightened before it is read, and the log says so
-  ([`Environment.md`](Environment.md#rete_secrets_file)).
+  `0700` — is tightened before it is read, and the log says so.
 
 **Regenerating the token** takes effect on the next request: the old token gets `403`. The
 server closes its port and opens it again with the new token, so a request in flight at that
