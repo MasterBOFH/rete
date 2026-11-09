@@ -44,7 +44,8 @@ Add an entry to the `modules` list in `gobnc.json`:
       "name": "retecloud",
       "exec": "/usr/local/bin/gobnc-retecloud",
       "features": ["networks", "events", "history", "read_markers", "clients",
-                   "send", "devices", "auth", "storage"],
+                   "send", "devices", "auth", "storage",
+                   "member_meta", "silence", "channel_meta"],
       "config": {
         "listen_addr": "0.0.0.0:8443",
         "tls_cert": "/etc/gobnc/certs/server.crt",
@@ -55,7 +56,9 @@ Add an entry to the `modules` list in `gobnc.json`:
 }
 ```
 
-Keep the `features` list as shown. The keys in `config`:
+Keep the `features` list as shown. The last three let the bouncer keep what the phone shows without asking
+the IRC server itself: channel modes and topics, the details of the users in the nick list, and your Block
+list. The keys in `config`:
 
 | Key | Meaning |
 |---|---|
@@ -112,6 +115,11 @@ connector keeps running the old program. A reload hands the port to the new proc
 disconnected once and reconnect straight away, without showing an error. If the new program fails to start,
 the old one keeps serving. `gobnc module reload retecloud` also applies a `config` change you made in
 `gobnc.json` after `gobnc rehash`.
+
+If you set the connector up from an earlier version of this guide, update GoBNC and the connector together,
+add `member_meta`, `silence` and `channel_meta` to its `features` list, run `gobnc rehash`, then
+`gobnc module reload retecloud`. Without them the phone shows no channel modes or topic, fewer details in
+the nick list and no Block list.
 
 ## Adding the bouncer in the app
 
@@ -182,6 +190,10 @@ A network's long-press menu also offers **Connect** or **Disconnect** and **Reco
 stop and restart the bouncer's connection to that IRC network, and **Block list** on networks whose server
 supports one.
 
+In a channel, tap its modes in the top bar to see them, and to change them if you are a channel operator.
+The same sheet shows the channel's ban, exception, invite and quiet lists, which the app asks the IRC server
+for through the bouncer each time you open them.
+
 ## What differs from ReteCloud
 
 - **No creating or deleting networks from the app.** Do that on the bouncer.
@@ -214,6 +226,8 @@ A few rules to expect:
 - Only networks you show on this device notify you.
 - A buffer's **Highlight** switch and the network's highlight rules decide what counts.
 - Nothing is sent while the app is open and connected to that bouncer.
+- A burst of messages from one person becomes a single notification that counts them. Only the first in a
+  minute makes a sound, and a buffer sends at most ten notifications a minute.
 - Tapping a notification opens the buffer at that line. Reading the buffer on another device removes the
   notification from this one.
 - Signing out of ReteCloud, or removing the bouncer from the app, turns the bouncer's push off.
