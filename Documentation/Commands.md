@@ -20,7 +20,6 @@ The apps are written **Mac** (Rete for Mac), **iOS** (Rete for iOS), **reTerm** 
 | `/script` | yes | says it is unavailable | yes | yes |
 | `/set` | yes | no | yes | yes |
 | `/help` | yes | no | yes | no |
-| `/rowaudit` | yes | yes | yes | no |
 | `/buffer` (switch, close, move, hide) | no | no | yes | no |
 | `/network`, `/server`, `/exit`, `/mouse`, `/control`, `/log`, `/colour`, `/highlight`, `/fold`, `/raw` | no | no | yes | no |
 
@@ -156,11 +155,6 @@ server accepts, and what it replies, varies between servers.
 | `/znc <params>` | Sends a `ZNC` command to the server: `/znc *status help` goes out as `ZNC *status help`. |
 | `/bnc <params>` | Sends a `BNC` command to the server in the same way. |
 
-### Diagnostics
-
-`/perf [on|off|status|reset|dump]` switches Rete's performance recording and prints or saves what it
-recorded. It is for troubleshooting with the developers and has no effect on chatting.
-
 ## Commands of the app
 
 ### `/buffer`
@@ -205,23 +199,15 @@ Every key and value is in [Settings](Settings.md).
 | `/help <command>` | One command's usage and description, for example `/help kick`. |
 | `/help <topic>` | A topic of the app, such as `/help buffer`. |
 
-reTerm's topics are `network`, `server`, `exit` (also `quit`), `script`, `set`, `rowaudit`, `control`,
+reTerm's topics are `network`, `server`, `exit` (also `quit`), `script`, `set`, `control`,
 `mouse` (also `select`, `copy`), `colour`, `highlight`, `keys` (also `keyboard`), `fold`, `log` and
-`buffer`. Mac's are `script`, `set` and `rowaudit`.
+`buffer`. Mac's are `script` and `set`.
 
 ### `/script`
 
 **Mac, reTerm, Linux.** Manages Tcl script bundles from the input line: list, inspect, fetch from the
 catalogue, load, unload, rehash, debug, and start a new bundle. **iOS** has no scripting and says so.
 The subcommands and their answers are in [Scripts](Scripts.md#the-script-command).
-
-### `/rowaudit`
-
-**Mac, iOS, reTerm.** A check that every message the app received is on screen. Switch recording on with
-`/rowaudit on`, then `/rowaudit` (or `/rowaudit run [settle-ms] [max-wait-s]`) waits for the message stream
-to go quiet and prints a report naming any message that went missing. `/rowaudit status` shows what has been
-seen, `/rowaudit reset` starts the window again, and `/rowaudit off` stops recording. It is off by default
-and costs nothing while off.
 
 ## reTerm
 
