@@ -147,7 +147,8 @@ Most keys mean the same thing everywhere. A few are handled by the app you type 
 
 | Key | App | What it does there |
 |---|---|---|
-| `appearance` | macOS app | only the macOS app has it; the window follows it at once |
+| `appearance` | macOS app | `automatic` follows the system; the window follows it at once |
+| `appearance` | reTerm | default `dark`; `automatic` asks the terminal for its background colour and draws dark when it does not answer; the screen follows it at once |
 | `chat_font_size` | macOS app | the window follows it at once |
 | `terminal_mouse` | reTerm | the terminal's mouse reporting switches at once |
 | `theme` | macOS app | accepts the same list of themes Preferences shows |

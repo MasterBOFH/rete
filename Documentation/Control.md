@@ -753,6 +753,11 @@ With sections, each in the engine's own encoding:
 The section names are `connection`, `registration`, `sasl`, `capabilities`, `isupport`,
 `channels`, `queries`, `buffers`, `silentQueries`, `whox`, `chathistory`, `batches`,
 `reconnect`, `flood`, `config`, `markread`, `silence`, `whois`, `scripts`, matched exactly.
+The `flood` section reports the outbound throttle as it stands: its bounds — `maxBytes` per
+`windowSeconds`, the credit a burst may run ahead by (`burstMs`) and the most bytes one burst may
+put on the wire (`burstMaxBytes`, the `flood_throttle_burst_bytes` setting; `0` is no byte bound) —
+the delays charged per chat line and per command (`minDelayMs`, `commandDelayMs`), and its state:
+`availableBytes` (absent while throttling is off), `pendingCount` and `isProcessing`.
 The `scripts` section carries counts only (`inputCallbackCount`, `menuItemCount`,
 `buttonCount`): the control surface exposes no script state — no callback, menu label, button
 text or icon. The `buffers` section gives each buffer's three per-buffer switches — the Log,

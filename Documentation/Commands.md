@@ -177,7 +177,7 @@ menu, saved per network. `logging` and `highlights` are accepted for `log` and `
 |---|---|
 | `/buffer <name>` | Switches to a channel, conversation or other buffer by name. |
 | `/buffer <N>` | Switches by the number shown beside the buffer in the list. |
-| `/buffer close [name]` | Closes the current channel or conversation, or the one named. A channel you are on is left first. |
+| `/buffer close [name]` | Closes the current channel or conversation, or the one named. A channel you are on is left first. In the Settings buffer `/set` opens, it closes that buffer; `/set` opens it again. |
 | `/buffer move up\|down\|top\|bottom\|<N> [name]` | Moves a channel or conversation within its own list. `<N>` is a position, from 1. The order is saved per network. |
 | `/buffer hide [name]`, `/buffer show <name>` | Hides a channel or conversation from the list without leaving it, and brings it back. |
 
@@ -296,9 +296,10 @@ and `black`.
 
 ### `/highlight`
 
-Chooses which messages are highlighted, on the network of the current buffer. A message that matches any
-enabled rule is highlighted. With no rules, messages that contain your nick are. These are the rules Rete for
-Mac edits as Highlight Rules.
+Chooses which messages are highlighted, on the network of the current buffer. These are the rules Rete for
+Mac edits as Highlight Rules. A message is highlighted when it matches any of the enabled rules, and it also
+meets every enabled `not` rule (`notsender`, `notloggedin`, `notcommon`, `notchannel`). With no rules, or only
+`not` rules, a message that contains your nick counts as a match. Direct messages are always highlighted.
 
 | Command | What it does |
 |---|---|
@@ -306,19 +307,33 @@ Mac edits as Highlight Rules.
 | `/highlight list` | Lists the rules, numbered. |
 | `/highlight del <n>` | Removes rule `n`. |
 
-| Kind | Highlights a message when |
+| Kind | A message matches when |
 |---|---|
 | `mynick` | it contains your nick |
 | `text <text>` | it contains the text |
-| `sender <nick>`, `notsender <nick>` | it is sent by, or not sent by, that nick |
-| `loggedin`, `notloggedin` | the sender is, or is not, logged in to an account |
-| `common`, `notcommon` | the sender is, or is not, on a channel with you |
+| `sender <nick>` | it is sent by that nick |
+| `loggedin` | the sender is logged in to an account |
+| `common` | the sender is on a channel with you |
 | `opped`, `voiced` | the sender is opped, or voiced, on a channel with you |
-| `channel <#channel>`, `notchannel <#channel>` | it is, or is not, in that channel |
+| `channel <#channel>` | it is in that channel |
+
+| `not` kind | Only highlights a message when |
+|---|---|
+| `notsender <nick>` | it is not sent by that nick |
+| `notloggedin` | the sender is not logged in to an account |
+| `notcommon` | the sender is not on a channel with you |
+| `notchannel <#channel>` | it is not in that channel |
 
 ```
 /highlight add text release
 /highlight add sender alice
+```
+
+To highlight your nick from anyone but `chief`:
+
+```
+/highlight add mynick
+/highlight add notsender chief
 ```
 
 ### `/fold`

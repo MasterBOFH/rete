@@ -941,45 +941,62 @@ proc my_silence {action hostmask} {
 **ERROR**
 ```tcl
 proc my_error {text} {
-    # text: an error line from the IRC server
+    # text: the IRC server's ERROR message
     return 0
 }
 ```
 
-`ERROR` is the **IRC server's** error event. It fires once for each error line the
-server sends that Rete is about to write to the server buffer, and `text` is that line
-exactly:
+`ERROR` is the **IRC server's** `ERROR` command and nothing else: the server telling you
+it is closing your link. It fires on a direct IRC connection and on a ReteCloud
+connection when the hosted session relays one, and `text` is the command's trailing
+parameter, **verbatim**: `Closing Link: 1.2.3.4 (Ping timeout)`.
 
-| Where the error came from | What `text` holds |
-|---|---|
-| The server's `ERROR` command — direct IRC, and ReteCloud when the hosted session relays one | the command's trailing parameter, **verbatim**: `Closing Link: 1.2.3.4 (Ping timeout)` |
-| An IRCv3 `FAIL` standard reply | `FAIL <command> <code> [context…]: <description>` — Rete composes that line out of the reply's parts, so it is not a wire line. `WARN` and `NOTE` are not errors and fire nothing |
+**Error lines Rete writes itself never fire `ERROR`.** They are shown in the server
+buffer and reach no script: a message Rete received but could not read, an outgoing
+line it had to cut or refuse, a message the ReteCloud server would not send, a history
+page that did not load, a saved SASL password it could not read, and the connection
+itself failing — failing to connect, authenticate, create or sync a ReteCloud session,
+or a lost or refused socket. No script can hide those lines, and their wording is not
+part of this API.
 
-It also fires for the few error lines Rete writes about one message or request rather
-than about the connection: a message it received but could not read, a message the
-ReteCloud server would not send, a history page that did not load, a saved SASL password
-it could not read. Their wording is not part of this API and may change.
-
-**The connection itself failing never fires `ERROR`, and no script can hide it.** On a
-ReteCloud connection, failing to connect, authenticate, create or sync the session, or
-to take it off IRC, writes an error line to the server buffer (`ReteCloud authentication
-failed: …`, `ReteCloud API link failed: …`, `ReteCloud history sync failed: …`,
-`disconnect_session failed: …`, `Cannot /quit: …`, and so on). That line fires no
-event and is always shown, because it is often the only thing that tells the user the
-session stopped. On a direct IRC connection a lost or refused socket fires no event
-either, so a script sees the same thing on both.
-
-If you want the server's `ERROR` command and nothing else, bind `RAWIN` and look for it
-there.
+The IRCv3 standard replies have binds of their own: `FAIL`, `WARN` and `NOTE`, below.
 
 `return 1` suppresses the line. `2` does nothing `1` does not: the event carries no
 session state of its own.
 
-Not an `ERROR` event: the error lines your own `/commands` produce (*"Usage: /join
+Not an `ERROR` event either: the error lines your own `/commands` produce (*"Usage: /join
 #channel [key]"*, *"Unknown command: /exit"*). Those are written straight into the
 buffer as errors and dispatch nothing. (A `/command` Rete does not know is **not** an
 error: it is sent to the server as typed — see **Custom commands** — and what the server
 answers arrives like any other server line.)
+
+**FAIL** (IRCv3 standard reply)
+```tcl
+proc my_fail {command code context description} {
+    # command: the command the reply is about, or "*" when it is about none
+    # code: the reply's machine-readable code, e.g. "INVALID_PARAMS"
+    # context: the reply's context parameters, separated by single spaces, or ""
+    # description: the human-readable text
+    return 0
+}
+```
+
+The server's `FAIL`, `WARN` and `NOTE` replies, each to its own bind with the same four
+arguments. `:irc.example.com FAIL JOIN CHANNEL_FULL #rete :Channel is full` calls a
+`FAIL` handler with `JOIN`, `CHANNEL_FULL`, `#rete` and `Channel is full`. No context
+parameter can contain a space, so splitting `context` on spaces gives them back.
+
+A `FAIL` is shown in the server buffer as an error line, `WARN` and `NOTE` as
+information lines, all three as `FAIL JOIN CHANNEL_FULL #rete: Channel is full`.
+`return 1` suppresses the line. `2` does nothing `1` does not.
+
+**WARN** (IRCv3 standard reply)
+
+The server's `WARN` reply: the same four arguments as **FAIL**, `{command code context description}`.
+
+**NOTE** (IRCv3 standard reply)
+
+The server's `NOTE` reply: the same four arguments as **FAIL**, `{command code context description}`.
 
 #### Disconnecting on a ReteCloud connection — three verbs, two meanings
 

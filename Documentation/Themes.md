@@ -353,9 +353,10 @@ typo, not like a colour you left out.
   the current appearance.
 - On Rete for Linux it is the same system colours, for the desktop's light or dark setting;
   a message colour that will not parse is drawn in the foreground.
-- On `reTerm`, which always uses the `dark` palette, a message colour that will not parse is
-  drawn in the theme's foreground, and an unparseable `ui.background`, `ui.foreground` or
-  `ui.accent` is `#323232`, `#FFFFFF` or `#0A84FF`, the system's dark colours.
+- On `reTerm` a message colour that will not parse is drawn in the theme's foreground, and an
+  unparseable `ui.background`, `ui.foreground` or `ui.accent` is `#323232`, `#FFFFFF` or
+  `#0A84FF` in the `dark` palette and `#ECECEC`, `#000000` or `#007AFF` in the `light` one, the
+  system's colours for that appearance.
 
 The other `ui` colours take a fallback of their own when they will not parse, the one their entry
 in the schema names: the selection colours the accent at 15 % and the accent, a buffer-name colour
@@ -371,7 +372,7 @@ If a color is missing:
 - UI background falls back to the system window background (macOS) / system background (iOS/iPadOS).
 - Foreground falls back to the system label colour.
 - Accent falls back to the system accent colour.
-- Divider, topic bar, badge, sidebar selection, highlight-row, expanded-row and badge-icon colours fall back to the defaults given for each key in the schema above. Every app uses the same defaults. Where a default is a system colour (red, green), reTerm uses its dark-appearance value, as it uses the `dark` palette.
+- Divider, topic bar, badge, sidebar selection, highlight-row, expanded-row and badge-icon colours fall back to the defaults given for each key in the schema above. Every app uses the same defaults. Where a default is a system colour (red, green), reTerm uses the value for the palette it draws.
 
 Message color resolution:
 1. **Category color** is checked first (the line's category) - this is the primary classification
@@ -531,8 +532,10 @@ Rete's appearance setting picks the palette:
 - Light: uses the theme's `light` palette
 - Dark: uses the theme's `dark` palette
 
-Rete on Linux follows the desktop's light or dark setting, and reTerm always uses `dark`. The theme
-must define both light and dark palettes. A `preferDark` field in a theme file is ignored.
+Rete on Linux follows the desktop's light or dark setting. reTerm uses `dark` unless you choose
+otherwise with `/set appearance`: `light` uses the theme's `light` palette, and `automatic` asks the
+terminal for its background colour and uses `light` on a light background (`dark` when the terminal
+does not answer). The theme must define both light and dark palettes. A `preferDark` field in a theme file is ignored.
 
 ## Example: Minimal valid theme
 
@@ -856,7 +859,7 @@ Hide channel icons in dark mode only; keep defaults elsewhere:
       "background": { "hex": "#000000" },
       "foreground": { "hex": "#FFFFFF" },
       "accent": { "hex": "#0A84FF" },
-      "divider": { "hex": "#3C3C434A" },
+      "divider": { "hex": "#54545899" },
       "topicBarBackground": { "hex": "#1C1C1E" },
       "topicBarForeground": { "hex": "#FFFFFF" },
       "badgeBackground": { "hex": "#0A84FF1F" },

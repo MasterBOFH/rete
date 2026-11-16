@@ -190,6 +190,11 @@ A network's long-press menu also offers **Connect** or **Disconnect** and **Reco
 stop and restart the bouncer's connection to that IRC network, and **Block list** on networks whose server
 supports one.
 
+If the bouncer's connection to a network drops and comes back while the app is closed, the network's
+server buffer shows it the next time you open the app: the disconnect and its reason, the new connection,
+and the server's welcome messages and message of the day. This needs a bouncer and connector recent enough
+to keep that history.
+
 In a channel, tap its modes in the top bar to see them, and to change them if you are a channel operator.
 The same sheet shows the channel's ban, exception, invite and quiet lists, which the app asks the IRC server
 for through the bouncer each time you open them.

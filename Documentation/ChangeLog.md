@@ -1,3 +1,29 @@
+v0.9.1 - 16 November 2026
+====================
+* **Your uploaded images:** the Delete button under an image you uploaded is now on iOS and Rete for
+  Linux too, and shows when the image has expired or been deleted.
+* **reTerm on a light terminal:** `/set appearance light` draws your theme's light colours, and
+  `/set appearance automatic` follows the terminal's background.
+* **Scripts on the Mac:** Tcl scripts run several times faster in Rete and reTerm.
+* **Images on Linux:** click an image in Rete for Linux to open it in its own window, zoom and pan it,
+  and copy or save it.
+* **Links on iPhone and iPad:** long-press a message with a link and choose Copy Link to copy it.
+* **Long topics and user info on iPhone and iPad:** when a channel's topic or a private chat's user
+  details are too long for the bar, tap the arrow beside them to read them in full.
+* **Reporting a problem on iPhone and iPad:** Settings → Accounts can record a connection's traffic to
+  a file on the device, with passwords and tokens hidden, which you can share with a bug report.
+* **Switching buffers on iPhone and iPad:** a buffer still loading shows the syncing spinner and then
+  appears whole, instead of its lines arriving on screen.
+* **Networks dropping on Linux:** reTerm and Rete for Linux disconnect when the network goes away and
+  reconnect as soon as it is back, as Rete on the Mac does.
+* **Highlight rules:** an "is not" rule (sender, logged in, common channels, channel) now narrows the
+  other rules: "Contains my nick" with "Sender is not chief" highlights your nick from anyone but chief.
+* **Scrolling:** on the Mac, iPhone and iPad the chat stays at the newest line until you scroll up
+  yourself, even through a flood of messages. On the Mac, the line you are reading stays put while
+  older lines load above it.
+* **Scripts (breaking):** `bind ERROR` now fires only for the IRC server's `ERROR`, and the server's
+  `FAIL`, `WARN` and `NOTE` replies each have a bind of their own. See Scripts.md.
+
 v0.9 - 8 November 2026
 ====================
 * **Commands:** a reference of every command, with its arguments, examples and which apps have it, is on the website.
